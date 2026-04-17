@@ -139,11 +139,9 @@ $(function(){
                     "}"
                 ].join("\n");
 
-                const hint = '<div id="iniadpp-hint">印刷ダイアログで送信先を<b>「PDFに保存」</b>にしてください。<button id="iniadpp-print-btn">印刷ダイアログを開く</button></div>';
+                const hint = '<div id="iniadpp-hint">印刷ダイアログで送信先を<b>「PDFに保存」</b>にしてください。<button id="iniadpp-print-btn" type="button">印刷ダイアログを開く</button></div>';
 
-                const autoPrintScript = '<script>window.addEventListener("load",function(){var b=document.getElementById("iniadpp-print-btn");if(b){b.addEventListener("click",function(){window.print();});}setTimeout(function(){window.print();},700);});</script>';
-
-                const result = "<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'><title>" + safeName + "</title><style>" + style + "</style></head><body>" + hint + pageResult + autoPrintScript + "</body></html>";
+                const result = "<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'><title>" + safeName + "</title><style>" + style + "</style></head><body>" + hint + pageResult + "</body></html>";
 
                 try {
                     document.open();
@@ -151,6 +149,25 @@ $(function(){
                     document.close();
                     document.title = safeName;
                     console.log("[INIAD++ PDF] 印刷用ページに置換しました。印刷ダイアログからPDF保存してください。");
+
+                    const triggerPrint = function(){
+                        try {
+                            window.focus();
+                            window.print();
+                            console.log("[INIAD++ PDF] window.print() を呼び出しました");
+                        } catch(err){
+                            console.error("[INIAD++ PDF] window.print() 失敗:", err);
+                        }
+                    };
+
+                    const btn = document.getElementById("iniadpp-print-btn");
+                    if(btn){
+                        btn.addEventListener("click", triggerPrint);
+                    } else {
+                        console.warn("[INIAD++ PDF] 印刷ボタンが見つかりません");
+                    }
+
+                    setTimeout(triggerPrint, 800);
                 } catch(e){
                     console.error("[INIAD++ PDF] ページ置換に失敗:", e);
                     alert("PDF用ページの生成に失敗しました。コンソールを確認してください。");
