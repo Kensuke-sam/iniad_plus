@@ -120,9 +120,12 @@ $(function(){
 
             let front = 0;
 
+            const originalTitle = document.title;
             let id = setInterval(async function(){
+                console.log("[INIAD++ PDF] 待機中: images total=" + is_break1 + ", done=" + image_done);
                 if(is_break1 == front && image_done >= is_break1){
                     clearInterval(id);
+                    console.log("[INIAD++ PDF] 全画像の変換完了。PDF生成を開始");
 
                     if(!window.jspdf || !window.jspdf.jsPDF){
                         alert("jsPDFの読み込みに失敗しました。拡張機能を再読み込みしてください。");
@@ -133,6 +136,7 @@ $(function(){
                     let pdf = null;
                     let cnt = 1;
                     const scale = 2;
+                    const totalPages = (parseInt($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize"), 10) || 0);
 
                     for(;;){
                         let title = $(".punch-viewer-svgpage-a11yelement").attr('aria-label');
@@ -141,26 +145,32 @@ $(function(){
                             const pageTitle = titleArray.join("");
                             name_pdf = pageTitle && pageTitle.trim() !== "" ? pageTitle : $("title").text();
                         }
+                        document.title = "[PDF生成中 " + cnt + (totalPages ? "/" + totalPages : "") + "] " + originalTitle;
                         let slide = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
 
-                        try {
-                            const rendered = await svgToDataUrl(slide, scale);
-                            const w = rendered.width;
-                            const h = rendered.height;
-                            const orientation = w >= h ? "l" : "p";
+                        if(!slide){
+                            console.warn("[INIAD++ PDF] slide SVGが見つからない (page " + cnt + ")");
+                        } else {
+                            try {
+                                const rendered = await svgToDataUrl(slide, scale);
+                                const w = rendered.width;
+                                const h = rendered.height;
+                                const orientation = w >= h ? "l" : "p";
 
-                            if(pdf === null){
-                                pdf = new jsPDF({
-                                    orientation: orientation,
-                                    unit: "pt",
-                                    format: [w, h]
-                                });
-                            } else {
-                                pdf.addPage([w, h], orientation);
+                                if(pdf === null){
+                                    pdf = new jsPDF({
+                                        orientation: orientation,
+                                        unit: "pt",
+                                        format: [w, h]
+                                    });
+                                } else {
+                                    pdf.addPage([w, h], orientation);
+                                }
+                                pdf.addImage(rendered.dataUrl, "JPEG", 0, 0, w, h, undefined, "FAST");
+                                console.log("[INIAD++ PDF] ページ追加: " + cnt + " (" + w + "x" + h + ")");
+                            } catch(e){
+                                console.error("[INIAD++ PDF] スライドのレンダリングに失敗 (page " + cnt + "):", e);
                             }
-                            pdf.addImage(rendered.dataUrl, "JPEG", 0, 0, w, h, undefined, "FAST");
-                        } catch(e){
-                            console.error("スライドのレンダリングに失敗しました:", e);
                         }
 
                         if($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize") == $(".docs-material-menu-button-flat-default-caption").text()){
@@ -170,12 +180,15 @@ $(function(){
                             keyCode: 39
                         }));
                         cnt++;
-                        await new Promise(function(r){ setTimeout(r, 150); });
+                        await new Promise(function(r){ setTimeout(r, 350); });
                     }
+
+                    document.title = originalTitle;
 
                     if(pdf){
                         const safeName = (name_pdf || "slides").replace(/[\\/:*?"<>|]/g, "_");
                         pdf.save(safeName + ".pdf");
+                        console.log("[INIAD++ PDF] 保存完了: " + safeName + ".pdf");
                     } else {
                         alert("PDFの生成に失敗しました。");
                     }
