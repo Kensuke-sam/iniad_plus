@@ -22,180 +22,141 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-function svgToDataUrl(svgElement, scale){
-    return new Promise(function(resolve, reject){
-        const serialized = new XMLSerializer().serializeToString(svgElement);
-        const viewBox = svgElement.viewBox && svgElement.viewBox.baseVal;
-        const w = viewBox && viewBox.width ? viewBox.width : (svgElement.getBoundingClientRect().width || 960);
-        const h = viewBox && viewBox.height ? viewBox.height : (svgElement.getBoundingClientRect().height || 540);
-
-        const svgBlob = new Blob([serialized], {type: "image/svg+xml;charset=utf-8"});
-        const url = URL.createObjectURL(svgBlob);
-
-        const img = new Image();
-        img.onload = function(){
-            const canvas = document.createElement("canvas");
-            canvas.width = Math.max(1, Math.round(w * scale));
-            canvas.height = Math.max(1, Math.round(h * scale));
-            const ctx = canvas.getContext("2d");
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            URL.revokeObjectURL(url);
-            try {
-                const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-                resolve({dataUrl: dataUrl, width: w, height: h});
-            } catch(e){
-                reject(e);
-            }
-        };
-        img.onerror = function(e){
-            URL.revokeObjectURL(url);
-            reject(e);
-        };
-        img.src = url;
-    });
-}
-
 $(function(){
     if(window.location.href.indexOf("docs.google.com/presentation/d/e") != -1){
-        let check = confirm("スライドをPDFでダウンロードしますか？");
-        if(check){
-            let name_pdf;
+        let check = confirm("スライドをPDFでダウンロードしますか？\n次に開く印刷ダイアログで送信先を「PDFに保存」にしてください。");
+        if(!check) return;
 
-            let click_cnt = 0;
-            let is_break1 = 0;
-            let image_done = 0;
-            for(;;){
-                let slide = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
+        let name_pdf;
+        let click_cnt = 0;
+        let is_break1 = 0;
+        let image_done = 0;
 
-                $(slide).find("image").each(function(i){
-                    let imgURL = $(this).attr("xlink:href");
-                    const imageNode = $(slide).find("image")[i];
+        for(;;){
+            let slide = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
 
-                    (async () => {
-                        try {
-                            async function getImage(url){
-                                const res = await fetch(url);
-                                const blob = await res.blob()
-                                return blob;
-                            }
+            $(slide).find("image").each(function(i){
+                let imgURL = $(this).attr("xlink:href");
+                const imageNode = $(slide).find("image")[i];
 
-                            const imageData = await getImage(imgURL);
+                (async () => {
+                    try {
+                        const res = await fetch(imgURL);
+                        const blob = await res.blob();
+                        await new Promise(function(resolve){
+                            const filereader = new FileReader();
+                            filereader.onload = function(){
+                                $(imageNode).attr({"xlink:href": this.result});
+                                resolve();
+                            };
+                            filereader.onerror = function(){ resolve(); };
+                            filereader.readAsDataURL(blob);
+                        });
+                    } catch(e){
+                        console.warn("[INIAD++ PDF] 画像のbase64変換に失敗:", e);
+                    } finally {
+                        image_done++;
+                    }
+                })();
+                is_break1++;
+            });
 
-                            await new Promise(function(resolve){
-                                let filereader = new FileReader();
-                                filereader.onload = function(){
-                                    $(imageNode).attr({
-                                        "xlink:href": this.result
-                                    });
-                                    resolve();
-                                };
-                                filereader.onerror = function(){ resolve(); };
-                                filereader.readAsDataURL(imageData);
-                            });
-                        } catch(e){
-                            console.warn("画像のbase64変換に失敗:", e);
-                        } finally {
-                            image_done++;
-                        }
-                    })()
-                    is_break1++;
-                });
-
-                if($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize") == $(".docs-material-menu-button-flat-default-caption").text()){
-                    break;
-                }
-                document.dispatchEvent(new KeyboardEvent("keydown",{
-                    keyCode: 39
-                }));
-                click_cnt++;
+            if($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize") == $(".docs-material-menu-button-flat-default-caption").text()){
+                break;
             }
-
-            for(let i = 0; i < click_cnt; i++){
-                document.dispatchEvent(new KeyboardEvent("keydown",{
-                    keyCode: 37
-                }));
-            }
-
-            let front = 0;
-
-            const originalTitle = document.title;
-            let id = setInterval(async function(){
-                console.log("[INIAD++ PDF] 待機中: images total=" + is_break1 + ", done=" + image_done);
-                if(is_break1 == front && image_done >= is_break1){
-                    clearInterval(id);
-                    console.log("[INIAD++ PDF] 全画像の変換完了。PDF生成を開始");
-
-                    if(!window.jspdf || !window.jspdf.jsPDF){
-                        alert("jsPDFの読み込みに失敗しました。拡張機能を再読み込みしてください。");
-                        return;
-                    }
-                    const { jsPDF } = window.jspdf;
-
-                    let pdf = null;
-                    let cnt = 1;
-                    const scale = 2;
-                    const totalPages = (parseInt($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize"), 10) || 0);
-
-                    for(;;){
-                        let title = $(".punch-viewer-svgpage-a11yelement").attr('aria-label');
-                        if(cnt == 1){
-                            const titleArray = (title || "").split(":").slice(1);
-                            const pageTitle = titleArray.join("");
-                            name_pdf = pageTitle && pageTitle.trim() !== "" ? pageTitle : $("title").text();
-                        }
-                        document.title = "[PDF生成中 " + cnt + (totalPages ? "/" + totalPages : "") + "] " + originalTitle;
-                        let slide = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
-
-                        if(!slide){
-                            console.warn("[INIAD++ PDF] slide SVGが見つからない (page " + cnt + ")");
-                        } else {
-                            try {
-                                const rendered = await svgToDataUrl(slide, scale);
-                                const w = rendered.width;
-                                const h = rendered.height;
-                                const orientation = w >= h ? "l" : "p";
-
-                                if(pdf === null){
-                                    pdf = new jsPDF({
-                                        orientation: orientation,
-                                        unit: "pt",
-                                        format: [w, h]
-                                    });
-                                } else {
-                                    pdf.addPage([w, h], orientation);
-                                }
-                                pdf.addImage(rendered.dataUrl, "JPEG", 0, 0, w, h, undefined, "FAST");
-                                console.log("[INIAD++ PDF] ページ追加: " + cnt + " (" + w + "x" + h + ")");
-                            } catch(e){
-                                console.error("[INIAD++ PDF] スライドのレンダリングに失敗 (page " + cnt + "):", e);
-                            }
-                        }
-
-                        if($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize") == $(".docs-material-menu-button-flat-default-caption").text()){
-                            break;
-                        }
-                        document.dispatchEvent(new KeyboardEvent("keydown",{
-                            keyCode: 39
-                        }));
-                        cnt++;
-                        await new Promise(function(r){ setTimeout(r, 350); });
-                    }
-
-                    document.title = originalTitle;
-
-                    if(pdf){
-                        const safeName = (name_pdf || "slides").replace(/[\\/:*?"<>|]/g, "_");
-                        pdf.save(safeName + ".pdf");
-                        console.log("[INIAD++ PDF] 保存完了: " + safeName + ".pdf");
-                    } else {
-                        alert("PDFの生成に失敗しました。");
-                    }
-                }
-                front = is_break1;
-            }, 500);
-
+            document.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 39}));
+            click_cnt++;
         }
+
+        for(let i = 0; i < click_cnt; i++){
+            document.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 37}));
+        }
+
+        let front = 0;
+        const id = setInterval(function(){
+            console.log("[INIAD++ PDF] 画像変換待機中: total=" + is_break1 + ", done=" + image_done);
+            if(is_break1 == front && image_done >= is_break1){
+                clearInterval(id);
+                console.log("[INIAD++ PDF] スライド収集を開始");
+
+                let pageResult = "";
+                let cnt = 1;
+                for(;;){
+                    const title = $(".punch-viewer-svgpage-a11yelement").attr('aria-label');
+                    if(cnt == 1){
+                        const titleArray = (title || "").split(":").slice(1);
+                        const pageTitle = titleArray.join("");
+                        name_pdf = pageTitle && pageTitle.trim() !== "" ? pageTitle : $("title").text();
+                    }
+                    const slide = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
+
+                    pageResult += "<section class='slide-page'>";
+                    if(slide){
+                        pageResult += new XMLSerializer().serializeToString(slide);
+                    } else {
+                        console.warn("[INIAD++ PDF] slide SVGが見つからない (page " + cnt + ")");
+                    }
+                    pageResult += "</section>";
+
+                    if($(".docs-material-menu-button-flat-default-caption").attr("aria-setsize") == $(".docs-material-menu-button-flat-default-caption").text()){
+                        break;
+                    }
+                    document.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 39}));
+                    cnt++;
+                }
+
+                const safeName = ((name_pdf || "slides") + "").replace(/[\\/:*?"<>|]/g, "_");
+
+                const style = [
+                    "@page { size: A4 landscape; margin: 0; }",
+                    "html, body { margin: 0; padding: 0; background: #fff; font-family: sans-serif; }",
+                    ".slide-page {",
+                    "  box-sizing: border-box;",
+                    "  width: 100vw;",
+                    "  height: 100vh;",
+                    "  display: flex;",
+                    "  align-items: center;",
+                    "  justify-content: center;",
+                    "  overflow: hidden;",
+                    "  page-break-after: always;",
+                    "  break-after: page;",
+                    "}",
+                    ".slide-page:last-child { page-break-after: auto; break-after: auto; }",
+                    ".slide-page > svg {",
+                    "  width: 100%;",
+                    "  height: 100%;",
+                    "  max-width: 100%;",
+                    "  max-height: 100%;",
+                    "}",
+                    "@media screen {",
+                    "  body { background: #eee; padding: 24px 0; }",
+                    "  .slide-page { width: min(90vw, 1280px); aspect-ratio: 16/9; height: auto; background: #fff; margin: 16px auto; box-shadow: 0 2px 12px rgba(0,0,0,.2); }",
+                    "  #iniadpp-hint { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #28a745; color: #fff; padding: 12px 20px; border-radius: 6px; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,.25); font-size: 14px; }",
+                    "  #iniadpp-hint button { margin-left: 12px; padding: 6px 14px; background: #fff; color: #28a745; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }",
+                    "}",
+                    "@media print {",
+                    "  #iniadpp-hint { display: none !important; }",
+                    "}"
+                ].join("\n");
+
+                const hint = '<div id="iniadpp-hint">印刷ダイアログで送信先を<b>「PDFに保存」</b>にしてください。<button id="iniadpp-print-btn">印刷ダイアログを開く</button></div>';
+
+                const autoPrintScript = '<script>window.addEventListener("load",function(){var b=document.getElementById("iniadpp-print-btn");if(b){b.addEventListener("click",function(){window.print();});}setTimeout(function(){window.print();},700);});</script>';
+
+                const result = "<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'><title>" + safeName + "</title><style>" + style + "</style></head><body>" + hint + pageResult + autoPrintScript + "</body></html>";
+
+                try {
+                    document.open();
+                    document.write(result);
+                    document.close();
+                    document.title = safeName;
+                    console.log("[INIAD++ PDF] 印刷用ページに置換しました。印刷ダイアログからPDF保存してください。");
+                } catch(e){
+                    console.error("[INIAD++ PDF] ページ置換に失敗:", e);
+                    alert("PDF用ページの生成に失敗しました。コンソールを確認してください。");
+                }
+            }
+            front = is_break1;
+        }, 500);
     }
 });
