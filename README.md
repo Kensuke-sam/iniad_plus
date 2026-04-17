@@ -10,7 +10,8 @@
 
 ## インストール方法（開発者モードで読み込む）
 
-Chrome ウェブストアには公開していないため、ローカルで「パッケージ化されていない拡張機能」として読み込みます。下記の手順は誰でも実行できます。
+> ⚠️ **重要**: Chrome ウェブストアにある [INIAD++](https://chrome.google.com/webstore/detail/iniad%2B%2B/ejncknkekdpnmenagjepeaagdmjjlihk?hl=ja) は**オリジナル版（HTML ダウンロード）**です。本フォークの **PDF ダウンロード機能は含まれていません**。
+> PDF 版を使うには、必ず下記の手順でこのリポジトリを**ローカルで読み込んで**ください。ウェブストア版と同時に有効化すると競合するため、ウェブストア版を入れている方は先に無効化または削除してください。
 
 ### 1. このリポジトリを取得する
 
@@ -77,10 +78,16 @@ git pull
 * 入力文字カウント
 * スライド位置、大きさの操作
 
-## オリジナル版
+## オリジナル版との違い
+
+| 項目 | オリジナル版 | 本フォーク |
+| --- | --- | --- |
+| 配布元 | Chrome ウェブストア | GitHub（ローカル読み込み） |
+| スライド出力形式 | HTML | **PDF** |
+| その他の機能 | （同じ） | （同じ） |
 
 * オリジナルリポジトリ: [akahoshi1421/INIAD-](https://github.com/akahoshi1421/INIAD-)
-* オリジナル公開版（HTML ダウンロード）: [Chrome ウェブストア](https://chrome.google.com/webstore/detail/iniad%2B%2B/ejncknkekdpnmenagjepeaagdmjjlihk?hl=ja)
+* ⚠️ Chrome ウェブストアの [INIAD++](https://chrome.google.com/webstore/detail/iniad%2B%2B/ejncknkekdpnmenagjepeaagdmjjlihk?hl=ja) は**オリジナル版（HTML 出力）**です。本フォークの PDF 機能を使いたい場合はウェブストア版ではなく、上記インストール手順でこのリポジトリを読み込んでください。
 
 ## 注意
 
