@@ -11,7 +11,7 @@ $(function(){
             thistext = thistext.split("&")[0];
             thistext = thistext.split("（")[0];
             thistext = thistext.split("(")[0];
-            const opendrive = '<a href="https://drive.google.com/drive/u/0/search?q=type:folder%20' + year + '%20' + thistext + '" class="btn btn-success drive-search" target="_blank"><i class="fab fa-google-drive"></i>ドライブで探す</a>';
+            const opendrive = '<a href="https://drive.google.com/drive/u/0/search?q=type:folder%20' + year + '%20' + thistext + '" class="btn btn-success drive-search" target="_blank"><i class="fa fa-folder-open"></i>ドライブで探す</a>';
             $(bodys[cnt]).append(opendrive);
             cnt++;
         });

@@ -1,6 +1,6 @@
 $(function(){
     if(window.location.href.indexOf("moocs") != -1){
-        const scdiv = '<div id="sctop"><a href="#"><span id="scicon"><i class="fas fa-angle-double-up"></i></span></a></div>';
+        const scdiv = '<div id="sctop"><a href="#"><span id="scicon"><i class="fa fa-angle-double-up"></i></span></a></div>';
         $(".content-wrapper").append(scdiv);
     }
 });

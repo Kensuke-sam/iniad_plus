@@ -1,0 +1,364 @@
+/* ============================================================
+ * INIADPULS Theme 01
+ * Additive overrides loaded last from manifest.json.
+ * ============================================================ */
+
+:root {
+  --iniad-primary: #337ab7;
+  --iniad-primary-hover: #2a6496;
+  --iniad-primary-text: #ffffff;
+  --iniad-success: #5cb85c;
+  --iniad-success-hover: #449d44;
+  --iniad-warning: #f0ad4e;
+  --iniad-danger: #d9534f;
+
+  --iniad-page-bg: #eef3f7;
+  --iniad-card-bg: #ffffff;
+  --iniad-banner-bg: #f5f5f5;
+  --iniad-sidebar-bg: #f5f5f5;
+
+  --iniad-text: #2a3541;
+  --iniad-text-sub: #6b7886;
+  --iniad-border: #e3e8ed;
+
+  --iniad-radius: 3px;
+  --iniad-radius-card: 3px;
+  --iniad-shadow-card: 0 1px 2px rgba(15, 30, 50, 0.04),
+    0 4px 12px rgba(51, 122, 183, 0.06);
+}
+
+.content-wrapper,
+.content-wrapper .content,
+.content-wrapper .container-fluid,
+.content-wrapper .content-header {
+  background-color: var(--iniad-page-bg) !important;
+  color: var(--iniad-text);
+}
+
+.content-header > h1,
+.content-header h1 {
+  color: var(--iniad-text) !important;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.main-header::before {
+  background: var(--iniad-primary);
+  content: "";
+  display: block;
+  height: 4px;
+  left: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 9999;
+}
+
+.main-sidebar,
+.sidebar {
+  background: var(--iniad-sidebar-bg) !important;
+  border-right: 1px solid var(--iniad-border);
+}
+
+.sidebar-menu > li > a {
+  border-left: 3px solid transparent !important;
+  color: #7f94a6 !important;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.sidebar-menu > li > a i,
+.sidebar-menu > li > a .fa,
+.sidebar-menu > li > a .fas,
+.sidebar-menu > li > a .far,
+.sidebar-menu > li > a .glyphicon,
+.sidebar-menu > li > a span {
+  color: inherit !important;
+}
+
+.sidebar-menu > li > a .sidebar-menu-text,
+.sidebar-menu > li > a .sidevar-menu-text {
+  color: #44596b !important;
+  font-weight: 600;
+}
+
+.sidebar-menu > li:hover > a {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-left-color: rgba(51, 122, 183, 0.35) !important;
+  color: #667d90 !important;
+}
+
+.sidebar-menu > li.active > a {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-left-color: var(--iniad-primary) !important;
+  color: #3f5668 !important;
+}
+
+.sidebar-menu > li:hover > a .sidebar-menu-text,
+.sidebar-menu > li:hover > a .sidevar-menu-text,
+.sidebar-menu > li.active > a .sidebar-menu-text,
+.sidebar-menu > li.active > a .sidevar-menu-text {
+  color: #3f5668 !important;
+}
+
+.content-wrapper .info-box,
+.content-wrapper .content .info-box,
+.content-wrapper .container-fluid .info-box {
+  background: var(--iniad-card-bg) !important;
+  border: 1px solid var(--iniad-border) !important;
+  border-radius: var(--iniad-radius-card) !important;
+  box-shadow: var(--iniad-shadow-card) !important;
+  min-height: auto !important;
+  padding: 8px !important;
+}
+
+.content-wrapper .info-box .info-box-content {
+  margin-left: 8px !important;
+  padding: 0 !important;
+}
+
+.content-wrapper .info-box .info-box-text,
+.content-wrapper .info-box-text {
+  color: var(--iniad-text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  overflow: hidden;
+  white-space: normal !important;
+}
+
+.content-wrapper .info-box-icon,
+.content-wrapper .info-box .info-box-icon {
+  border-radius: var(--iniad-radius) !important;
+  height: 48px !important;
+  overflow: hidden;
+  width: 48px !important;
+}
+
+.content-wrapper .alert,
+#yearbanner,
+#mycls {
+  background: var(--iniad-banner-bg) !important;
+  border: 1px solid var(--iniad-border) !important;
+  border-radius: var(--iniad-radius) !important;
+  color: var(--iniad-text-sub) !important;
+}
+
+#mycls {
+  font-size: 18px !important;
+  margin-top: 12px !important;
+  text-align: center !important;
+}
+
+.content-wrapper .btn,
+.pad-block .btn,
+.mycourses-body .btn,
+#ace_dl_button,
+#slide_download {
+  border-radius: var(--iniad-radius) !important;
+  font-weight: 500 !important;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.content-wrapper .btn-primary,
+.pad-block .btn-primary,
+.mycourses-body .btn-primary {
+  background-color: var(--iniad-primary) !important;
+  border-color: var(--iniad-primary) !important;
+  color: var(--iniad-primary-text) !important;
+}
+
+.content-wrapper .btn-primary:hover,
+.content-wrapper .btn-primary:focus,
+.pad-block .btn-primary:hover,
+.pad-block .btn-primary:focus,
+.mycourses-body .btn-primary:hover,
+.mycourses-body .btn-primary:focus {
+  background-color: var(--iniad-primary-hover) !important;
+  border-color: var(--iniad-primary-hover) !important;
+}
+
+.content-wrapper .btn-success,
+.pad-block .btn-success,
+.mycourses-body .btn-success,
+#ace_dl_button {
+  background-color: var(--iniad-success) !important;
+  border-color: var(--iniad-success) !important;
+  color: #ffffff !important;
+}
+
+.content-wrapper .btn-success:hover,
+.content-wrapper .btn-success:focus,
+.pad-block .btn-success:hover,
+.pad-block .btn-success:focus,
+.mycourses-body .btn-success:hover,
+.mycourses-body .btn-success:focus,
+#ace_dl_button:hover,
+#ace_dl_button:focus {
+  background-color: var(--iniad-success-hover) !important;
+  border-color: var(--iniad-success-hover) !important;
+}
+
+#class-sort-regist,
+#showdefault,
+#slide_download,
+#ace_dl_button,
+#slidedefault {
+  border-radius: var(--iniad-radius) !important;
+  font-weight: 500;
+}
+
+#uploadjsonfile {
+  background: #ffffff;
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.mymemo-contents {
+  background-color: var(--iniad-card-bg) !important;
+  border: 1px solid var(--iniad-border) !important;
+  border-radius: var(--iniad-radius-card) !important;
+  box-shadow: var(--iniad-shadow-card) !important;
+  overflow: hidden;
+  padding: 0 !important;
+  width: 300px !important;
+}
+
+.mymemo-contents .memoul {
+  background: var(--iniad-primary);
+  display: flex !important;
+  gap: 12px;
+  justify-content: flex-end;
+  left: 0 !important;
+  list-style: none;
+  margin: 0 !important;
+  padding: 6px 10px !important;
+}
+
+.mymemo-contents .memoul li {
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-block;
+  opacity: 0.9;
+  padding: 0 !important;
+}
+
+.mymemo-contents .textarea-mymemo {
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px !important;
+  padding: 8px;
+  resize: vertical;
+  width: calc(100% - 16px) !important;
+}
+
+.mymemo-contents .memobtn {
+  background: var(--iniad-success) !important;
+  border-color: var(--iniad-success) !important;
+  color: #ffffff !important;
+  left: 0 !important;
+  margin: 0 8px 8px !important;
+  width: calc(100% - 16px);
+}
+
+.mymemopd {
+  padding-bottom: 0 !important;
+}
+
+.mymemolist.list-group {
+  background: var(--iniad-card-bg);
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius-card);
+  overflow: hidden;
+}
+
+.mymemolist .list-group-item {
+  border-left: 3px solid var(--iniad-primary);
+  border-radius: 0 !important;
+  padding: 10px 14px;
+}
+
+.mymemolist .list-group-item a {
+  color: var(--iniad-primary);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+#slidebutton-div {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  height: auto !important;
+  padding: 4px;
+  width: auto !important;
+}
+
+#slidearrow {
+  color: var(--iniad-primary);
+  font-size: 200%;
+}
+
+#slidedefault {
+  background: var(--iniad-primary);
+  border-color: var(--iniad-primary);
+  color: #ffffff;
+}
+
+#sctop {
+  align-items: center;
+  background: var(--iniad-primary);
+  border-radius: 50%;
+  bottom: 24px !important;
+  box-shadow: 0 4px 14px rgba(51, 122, 183, 0.3);
+  color: #ffffff;
+  display: flex;
+  height: 44px !important;
+  justify-content: center;
+  right: 24px !important;
+  width: 44px !important;
+}
+
+#scicon {
+  color: #ffffff;
+  font-size: 180% !important;
+  left: 0 !important;
+}
+
+#iniadpp-hint {
+  background: var(--iniad-success) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+}
+
+#iniadpp-print-btn {
+  border-radius: 4px !important;
+  font-weight: 600 !important;
+}
+
+.dragover,
+body.dragover,
+.file-container .file-trigger-btn.dragover {
+  background: rgba(51, 122, 183, 0.04) !important;
+  outline: 2px dashed var(--iniad-primary) !important;
+  outline-offset: -6px;
+}
+
+.ui-sortable-handle {
+  cursor: move;
+  position: relative;
+}
+
+.ui-sortable-handle:hover {
+  box-shadow: none !important;
+}
+
+.ui-sortable-helper {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+  opacity: 0.95;
+}
