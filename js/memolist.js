@@ -1,25 +1,27 @@
 $(function(){
-    if(window.location.href == "https://moocs.iniad.org/courses?memolists"){
-        $(".content-wrapper").empty();
-        const addhtml = '<section class="content-header">    <h1>保存したメモ一覧</h1></section><section class="content container-fluid">    <ul class="mymemolist list-group list-group-flush">    </ul></section>';
-        $(".content-wrapper").append(addhtml);
+    if(window.location.href !== "https://moocs.iniad.org/courses?memolists") return;
 
-        for(let stgkey in localStorage){
-            let decodedstgkey = decodeURIComponent(stgkey);
-            if(decodedstgkey.indexOf("https://moocs.iniad.org") != -1){
-                let nullcheck = false;
-                for(let content of JSON.parse(decodeURIComponent(localStorage[stgkey]))){
-                    if(content != null){
-                        nullcheck = true;
-                        break;
-                    }
-                }
+    $(".content-wrapper").empty();
+    const addhtml = '<section class="content-header"><h1>保存したメモ一覧</h1></section><section class="content container-fluid"><ul class="mymemolist list-group list-group-flush"></ul></section>';
+    $(".content-wrapper").append(addhtml);
 
-                if(nullcheck){
-                    const li = '<li class="list-group-item">' + '<a href="' + decodedstgkey + '">' + decodedstgkey + '</a>' + '</li>';
-                    $(".mymemolist").append(li);
-                }
-            }
+    for(let stgkey in localStorage){
+        let decodedstgkey;
+        try { decodedstgkey = decodeURIComponent(stgkey); } catch(e) { continue; }
+        if(decodedstgkey.indexOf("https://moocs.iniad.org") !== 0) continue;
+
+        let list;
+        try { list = JSON.parse(localStorage[stgkey]); } catch(e) { continue; }
+        if(!Array.isArray(list)) continue;
+
+        let hasContent = false;
+        for(let content of list){
+            if(typeof content === "string" && content !== ""){ hasContent = true; break; }
         }
+        if(!hasContent) continue;
+
+        const $li = $('<li class="list-group-item"><a></a></li>');
+        $li.find("a").attr("href", decodedstgkey).text(decodedstgkey);
+        $(".mymemolist").append($li);
     }
 });

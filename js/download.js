@@ -24,15 +24,23 @@ SOFTWARE.
 
 $(function(){
     if(window.location.href.indexOf("docs.google.com/presentation/d/e") == -1) return;
-
-    const check = confirm("スライドをPDFでダウンロードしますか？\n次に開く印刷ダイアログで送信先を「PDFに保存」にしてください。");
-    if(!check) return;
+    if(!shouldRunPdfExport()) return;
 
     runPdfExport().catch(function(err){
-        console.error("[INIAD++ PDF] エラー:", err);
-        alert("PDF生成中にエラーが発生しました:\n" + (err && err.message ? err.message : err));
+        console.error("[INIADPLUS PDF] エラー:", err);
+        notifyFailure(err);
     });
 });
+
+function shouldRunPdfExport(){
+    try {
+        const url = new URL(window.location.href);
+        return url.searchParams.get("download") === "true"
+            || url.searchParams.get("iniadpp_download") === "1";
+    } catch(err){
+        return window.location.href.indexOf("download=true") !== -1;
+    }
+}
 
 async function runPdfExport(){
     const sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
@@ -68,7 +76,7 @@ async function runPdfExport(){
     }, {timeout: 20000, message: "総ページ数の取得がタイムアウトしました"});
 
     const totalPages = getTotalPages();
-    console.log("[INIAD++ PDF] 総ページ数: " + totalPages);
+    console.log("[INIADPLUS PDF] 総ページ数: " + totalPages);
 
     let safety = 0;
     while(getCurrentPage() !== 1 && safety < 1000){
@@ -111,8 +119,21 @@ async function runPdfExport(){
         await Promise.all(imageNodes.map(async function(imgNode){
             const href = $(imgNode).attr("xlink:href") || $(imgNode).attr("href");
             if(!href || href.indexOf("data:") === 0) return;
+
+            let url;
+            try { url = new URL(href, window.location.href); } catch(e){ return; }
+            if(url.protocol !== "https:") return;
+            const host = url.hostname;
+            const allowed = host === "docs.google.com"
+                || host.endsWith(".googleusercontent.com")
+                || host.endsWith(".gstatic.com");
+            if(!allowed) return;
+
             try {
-                const res = await fetch(href);
+                const res = await fetch(url.toString(), { credentials: "include" });
+                if(!res.ok) return;
+                const contentType = res.headers.get("Content-Type") || "";
+                if(!/^image\//i.test(contentType)) return;
                 const blob = await res.blob();
                 const dataUrl = await new Promise(function(resolve, reject){
                     const fr = new FileReader();
@@ -122,7 +143,7 @@ async function runPdfExport(){
                 });
                 $(imgNode).attr("xlink:href", dataUrl);
             } catch(e){
-                console.warn("[INIAD++ PDF] page " + i + " 画像のbase64化に失敗:", e);
+                console.warn("[INIADPLUS PDF] page " + i + " 画像のbase64化に失敗:", e);
             }
         }));
 
@@ -134,7 +155,7 @@ async function runPdfExport(){
         }
     }
 
-    console.log("[INIAD++ PDF] 全 " + pages.length + " ページの収集が完了");
+    console.log("[INIADPLUS PDF] 全 " + pages.length + " ページの収集が完了");
 
     let pageResult = "";
     for(const pageSvg of pages){
@@ -175,7 +196,7 @@ async function runPdfExport(){
         "}"
     ].join("\n");
 
-    const hint = '<div id="iniadpp-hint">印刷ダイアログで送信先を<b>「PDFに保存」</b>にしてください。<button id="iniadpp-print-btn" type="button">印刷ダイアログを開く</button></div>';
+    const hint = '<div id="iniadpp-hint"><span id="iniadpp-hint-text">PDF を生成しています。完了まで少し待ってください。</span><button id="iniadpp-print-btn" type="button">印刷ダイアログを開く</button></div>';
 
     const result = "<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'><title>" + safeName + "</title><style>" + style + "</style></head><body>" + hint + pageResult + "</body></html>";
 
@@ -183,14 +204,14 @@ async function runPdfExport(){
     document.write(result);
     document.close();
     document.title = safeName;
-    console.log("[INIAD++ PDF] 印刷用ページに置換しました");
+    console.log("[INIADPLUS PDF] 印刷用ページに置換しました");
 
     const triggerPrint = function(){
         try {
             window.focus();
             window.print();
         } catch(err){
-            console.error("[INIAD++ PDF] window.print() 失敗:", err);
+            console.error("[INIADPLUS PDF] window.print() 失敗:", err);
         }
     };
 
@@ -199,5 +220,53 @@ async function runPdfExport(){
         btn.addEventListener("click", triggerPrint);
     }
 
+    await sleep(250);
+    const autoSaved = await requestPdfDownload(safeName + ".pdf");
+    if(autoSaved){
+        updateHint("PDF をダウンロードしています。このタブは自動で閉じます。");
+        return;
+    }
+
+    updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
     setTimeout(triggerPrint, 800);
+}
+
+async function requestPdfDownload(filename){
+    if(typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage){
+        return false;
+    }
+
+    try {
+        const response = await chrome.runtime.sendMessage({
+            type: "iniadpp:pdf-ready",
+            filename: filename
+        });
+        return !!(response && response.ok);
+    } catch(err){
+        console.error("[INIADPLUS PDF] 自動保存要求失敗:", err);
+        return false;
+    }
+}
+
+function updateHint(message){
+    const el = document.getElementById("iniadpp-hint-text");
+    if(el){
+        el.textContent = message;
+    }
+}
+
+function notifyFailure(err){
+    const message = "PDF生成中にエラーが発生しました:\n" + (err && err.message ? err.message : err);
+    updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
+
+    if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage){
+        chrome.runtime.sendMessage({
+            type: "iniadpp:pdf-failed",
+            message: message
+        }).catch(function(sendErr){
+            console.error("[INIADPLUS PDF] エラー通知失敗:", sendErr);
+        });
+    }
+
+    alert(message);
 }

@@ -1,5 +1,5 @@
 $(function(){
-    const extension = '<li class="header">INIADPULS CONTENTS</li>'
+    const extension = '<li class="header">INIADPLUS CONTENTS</li>'
     $(".sidebar-menu").append(extension);
     const inserthtml = '<li class="treeview">    <a href="#">        <i class="fa fa-link"></i>        <span>            <span class="sidebar-menu-text">外部リンク</span>        </span>        <span class="pull-right-container">            <i class="fa fa-angle-left pull-right"></i>        </span>    </a>    <ul class="treeview-menu" style="display: none;">        <li>            <a href="https://iniad-lectures.slack.com" target="_blank"><span><span class="sidebar-menu-text">Slack</span></span></a>        </li>        <li>            <a href="https://www.ace.toyo.ac.jp/ct/home" target="_blank"><span><span class="sidebar-menu-text">ToyoNet-ACE</span></span></a>        </li><li>            <a href="https://ini-connect.net/" target="_blank"><span><span class="sidebar-menu-text">INI-connect</span></span></a>        </li>    </ul></li>'
     $(".sidebar-menu").append(inserthtml);

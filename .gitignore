@@ -1,1 +1,5 @@
 .vs/
+dist/
+.DS_Store
+*.zip
+zibmFGLu

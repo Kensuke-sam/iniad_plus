@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5f9ff"/>
+      <stop offset="100%" stop-color="#dbe9ff"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eef4ff"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4e8df2"/>
+      <stop offset="100%" stop-color="#245fd0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#2c5eb3" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="545" cy="62" r="92" fill="#c8dcff" opacity="0.45"/>
+  <circle cx="96" cy="338" r="110" fill="#b6d0ff" opacity="0.30"/>
+
+  <g filter="url(#shadow)">
+    <rect x="42" y="42" width="556" height="316" rx="28" fill="url(#card)"/>
+  </g>
+
+  <g transform="translate(76 78)">
+    <rect x="0" y="0" width="112" height="112" rx="28" fill="url(#accent)"/>
+    <circle cx="56" cy="56" r="44" fill="#ffffff" opacity="0.14"/>
+    <rect x="45" y="34" width="22" height="52" rx="11" fill="#ffffff"/>
+    <rect x="47" y="16" width="18" height="20" rx="9" fill="#ffffff"/>
+    <rect x="35" y="20" width="42" height="10" rx="5" fill="#ffffff"/>
+  </g>
+
+  <g fill="#183153">
+    <text x="224" y="124" font-size="34" font-weight="700" font-family="Helvetica, Arial, sans-serif">INIAD++</text>
+    <text x="224" y="162" font-size="18" font-weight="500" font-family="Helvetica, Arial, sans-serif" fill="#3f5f8c">
+      INIAD MOOCs の講義ページを少し使いやすく
+    </text>
+  </g>
+
+  <g transform="translate(76 226)">
+    <rect x="0" y="0" width="488" height="84" rx="20" fill="#edf4ff"/>
+    <g font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#21406c">
+      <circle cx="28" cy="24" r="7" fill="#2d6cdf"/>
+      <text x="46" y="30">スライドを PDF として保存</text>
+      <circle cx="28" cy="58" r="7" fill="#2d6cdf"/>
+      <text x="46" y="64">INIAD MOOCs / ACE の補助 UI を追加</text>
+      <circle cx="286" cy="24" r="7" fill="#2d6cdf"/>
+      <text x="304" y="30">処理はブラウザ内で完結</text>
+      <circle cx="286" cy="58" r="7" fill="#2d6cdf"/>
+      <text x="304" y="64">外部サーバー送信なし</text>
+    </g>
+  </g>
+</svg>

@@ -1,3 +1,29 @@
 #slide_download{
     width: 100%;
 }
+
+#slide_download_group {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.iniadpp-download-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.iniadpp-download-button {
+    width: 100%;
+}
+
+.iniadpp-download-subbuttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.iniadpp-download-subbuttons .iniadpp-download-button {
+    flex: 1 1 240px;
+    width: auto;
+}
