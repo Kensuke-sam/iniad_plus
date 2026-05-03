@@ -42,7 +42,21 @@ function shouldRunPdfExport(){
     }
 }
 
+const ACTION_DOWNLOAD = "download";
+const ACTION_IMAGE = "image";
+
+function getCurrentAction(){
+    try {
+        const url = new URL(window.location.href);
+        const a = url.searchParams.get("iniadpp_action");
+        return a === ACTION_IMAGE ? ACTION_IMAGE : ACTION_DOWNLOAD;
+    } catch(err){
+        return ACTION_DOWNLOAD;
+    }
+}
+
 async function runPdfExport(){
+    const action = getCurrentAction();
     const sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
 
     const waitFor = async function(check, opts){
@@ -191,6 +205,16 @@ async function runPdfExport(){
         "  #iniadpp-hint { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #28a745; color: #fff; padding: 12px 20px; border-radius: 6px; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,.25); font-size: 14px; }",
         "  #iniadpp-hint button { margin-left: 12px; padding: 6px 14px; background: #fff; color: #28a745; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }",
         "}",
+        "body.iniadpp-image-mode { background: #fff !important; padding: 0 !important; }",
+        "body.iniadpp-image-mode #iniadpp-hint { display: none !important; }",
+        "body.iniadpp-image-mode .slide-page {",
+        "  width: 1280px !important;",
+        "  height: 720px !important;",
+        "  aspect-ratio: auto !important;",
+        "  margin: 0 !important;",
+        "  box-shadow: none !important;",
+        "  background: #fff !important;",
+        "}",
         "@media print {",
         "  #iniadpp-hint { display: none !important; }",
         "}"
@@ -221,7 +245,21 @@ async function runPdfExport(){
     }
 
     await sleep(250);
-    const autoSaved = await requestPdfDownload(safeName + ".pdf");
+
+    if(action === ACTION_IMAGE){
+        const ok = await runImageExport(safeName);
+        if(ok){
+            updateHint("画像をダウンロードしています。このタブは自動で閉じます。");
+        } else {
+            updateHint("画像のダウンロードに失敗しました。タブを閉じてもう一度お試しください。");
+        }
+        return;
+    }
+
+    const autoSaved = await requestExport({
+        action: ACTION_DOWNLOAD,
+        filename: safeName + ".pdf"
+    });
     if(autoSaved){
         updateHint("PDF をダウンロードしています。このタブは自動で閉じます。");
         return;
@@ -231,16 +269,58 @@ async function runPdfExport(){
     setTimeout(triggerPrint, 800);
 }
 
-async function requestPdfDownload(filename){
+async function runImageExport(safeName){
+    document.body.classList.add("iniadpp-image-mode");
+    updateHint("画像を生成しています。完了まで少し待ってください。");
+
+    await new Promise(function(resolve){
+        if(typeof requestAnimationFrame === "function"){
+            requestAnimationFrame(function(){
+                requestAnimationFrame(resolve);
+            });
+        } else {
+            setTimeout(resolve, 50);
+        }
+    });
+
+    const pageEls = document.querySelectorAll(".slide-page");
+    const pageRects = Array.prototype.map.call(pageEls, function(el){
+        const r = el.getBoundingClientRect();
+        return {
+            x: r.left + window.scrollX,
+            y: r.top + window.scrollY,
+            width: r.width,
+            height: r.height
+        };
+    });
+
+    if(!pageRects.length){
+        document.body.classList.remove("iniadpp-image-mode");
+        return false;
+    }
+
+    const ok = await requestExport({
+        action: ACTION_IMAGE,
+        filename: safeName + ".png",
+        pageRects: pageRects,
+        devicePixelRatio: window.devicePixelRatio || 1
+    });
+
+    if(!ok){
+        document.body.classList.remove("iniadpp-image-mode");
+    }
+    return ok;
+}
+
+async function requestExport(payload){
     if(typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage){
         return false;
     }
 
     try {
-        const response = await chrome.runtime.sendMessage({
-            type: "iniadpp:pdf-ready",
-            filename: filename
-        });
+        const response = await chrome.runtime.sendMessage(Object.assign({
+            type: "iniadpp:pdf-ready"
+        }, payload));
         return !!(response && response.ok);
     } catch(err){
         console.error("[INIADPLUS PDF] 自動保存要求失敗:", err);
@@ -256,8 +336,14 @@ function updateHint(message){
 }
 
 function notifyFailure(err){
-    const message = "PDF生成中にエラーが発生しました:\n" + (err && err.message ? err.message : err);
-    updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
+    const action = getCurrentAction();
+    const label = action === ACTION_IMAGE ? "画像生成" : "PDF生成";
+    const message = label + "中にエラーが発生しました:\n" + (err && err.message ? err.message : err);
+    if(action === ACTION_IMAGE){
+        updateHint("画像の生成に失敗しました。タブを閉じてもう一度お試しください。");
+    } else {
+        updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
+    }
 
     if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage){
         chrome.runtime.sendMessage({

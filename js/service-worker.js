@@ -3,6 +3,13 @@ const STORAGE_KEYS = {
     active: "iniadpp_pdf_active"
 };
 
+const ACTION_DOWNLOAD = "download";
+const ACTION_IMAGE = "image";
+const VALID_ACTIONS = [ACTION_DOWNLOAD, ACTION_IMAGE];
+
+const ALLOWED_URL_HOST = "docs.google.com";
+const ALLOWED_URL_PATH_PREFIX = "/presentation/d/e/";
+
 chrome.runtime.onInstalled.addListener(function(){
     recoverState().catch(function(err){
         console.error("[INIADPLUS PDF] 初期化失敗:", err);
@@ -88,15 +95,18 @@ async function handlePdfReady(tab, message){
         return { ok: false, error: "inactive-tab" };
     }
 
-    const filename = sanitizeFilename(message.filename || state.active.filenameHint || "slides.pdf");
+    const action = normalizeAction(state.active.action);
+    const ext = action === ACTION_IMAGE ? ".png" : ".pdf";
+    const baseHint = stripExtension(message.filename || state.active.filenameHint || "slides");
+    const filename = sanitizeFilename(baseHint, ext);
 
     try {
-        await saveTabAsPdf(tab.id, filename);
+        await processExportFromTab(tab.id, filename, action, message);
         await cleanupActiveJob(tab.id, true);
         await processQueue();
-        return { ok: true, filename: filename };
+        return { ok: true, filename: filename, action: action };
     } catch(err){
-        console.error("[INIADPLUS PDF] PDF保存失敗:", err);
+        console.error("[INIADPLUS PDF] エクスポート処理失敗:", err);
         await focusTab(tab.id);
         await cleanupActiveJob(tab.id, false);
         await processQueue();
@@ -139,7 +149,7 @@ async function processQueue(){
 
     const nextJob = state.queue.shift();
     const tab = await chrome.tabs.create({
-        url: buildDownloadUrl(nextJob.url, nextJob.jobId),
+        url: buildDownloadUrl(nextJob.url, nextJob.jobId, nextJob.action),
         active: false
     });
 
@@ -147,6 +157,7 @@ async function processQueue(){
         jobId: nextJob.jobId,
         url: nextJob.url,
         filenameHint: nextJob.filenameHint,
+        action: nextJob.action,
         tabId: tab.id
     };
 
@@ -165,7 +176,7 @@ async function recoverState(){
     }
 }
 
-async function saveTabAsPdf(tabId, filename){
+async function processExportFromTab(tabId, filename, action, message){
     const debuggee = { tabId: tabId };
     let attached = false;
 
@@ -173,28 +184,12 @@ async function saveTabAsPdf(tabId, filename){
         await chrome.debugger.attach(debuggee, "1.3");
         attached = true;
 
-        const result = await chrome.debugger.sendCommand(debuggee, "Page.printToPDF", {
-            landscape: true,
-            printBackground: true,
-            paperWidth: 11.69,
-            paperHeight: 8.27,
-            marginTop: 0,
-            marginBottom: 0,
-            marginLeft: 0,
-            marginRight: 0,
-            preferCSSPageSize: true
-        });
-
-        if(!result || !result.data){
-            throw new Error("PDF データを取得できませんでした");
+        if(action === ACTION_IMAGE){
+            await exportPagesAsImages(debuggee, filename, message);
+            return;
         }
 
-        await chrome.downloads.download({
-            url: "data:application/pdf;base64," + result.data,
-            filename: filename,
-            saveAs: false,
-            conflictAction: "uniquify"
-        });
+        await exportAsPdf(debuggee, filename);
     } finally {
         if(attached){
             try {
@@ -204,6 +199,91 @@ async function saveTabAsPdf(tabId, filename){
             }
         }
     }
+}
+
+async function exportAsPdf(debuggee, filename){
+    const result = await chrome.debugger.sendCommand(debuggee, "Page.printToPDF", {
+        landscape: true,
+        printBackground: true,
+        paperWidth: 11.69,
+        paperHeight: 8.27,
+        marginTop: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        marginRight: 0,
+        preferCSSPageSize: true
+    });
+
+    if(!result || !result.data){
+        throw new Error("PDF データを取得できませんでした");
+    }
+
+    await chrome.downloads.download({
+        url: "data:application/pdf;base64," + result.data,
+        filename: filename,
+        saveAs: false,
+        conflictAction: "uniquify"
+    });
+}
+
+async function exportPagesAsImages(debuggee, filename, message){
+    const pageRects = Array.isArray(message && message.pageRects) ? message.pageRects : [];
+    const dpr = sanitizePositiveNumber(message && message.devicePixelRatio, 1, 4);
+
+    if(!pageRects.length){
+        throw new Error("画像化対象のスライドが見つかりませんでした");
+    }
+
+    const baseName = stripExtension(filename);
+    const padWidth = String(pageRects.length).length;
+
+    for(let i = 0; i < pageRects.length; i++){
+        const rect = pageRects[i];
+        if(!isValidRect(rect)){
+            throw new Error("不正なスライド座標を検出しました (page " + (i + 1) + ")");
+        }
+
+        const shot = await chrome.debugger.sendCommand(debuggee, "Page.captureScreenshot", {
+            format: "png",
+            captureBeyondViewport: true,
+            fromSurface: true,
+            clip: {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                scale: dpr
+            }
+        });
+
+        if(!shot || !shot.data){
+            throw new Error("画像データを取得できませんでした (page " + (i + 1) + ")");
+        }
+
+        const pageFilename = baseName + "_p" + String(i + 1).padStart(padWidth, "0") + ".png";
+        await chrome.downloads.download({
+            url: "data:image/png;base64," + shot.data,
+            filename: pageFilename,
+            saveAs: false,
+            conflictAction: "uniquify"
+        });
+    }
+}
+
+function isValidRect(rect){
+    if(!rect) return false;
+    const keys = ["x", "y", "width", "height"];
+    for(const k of keys){
+        if(typeof rect[k] !== "number" || !isFinite(rect[k])) return false;
+    }
+    return rect.width > 0 && rect.height > 0;
+}
+
+function sanitizePositiveNumber(value, fallback, max){
+    const n = Number(value);
+    if(!isFinite(n) || n <= 0) return fallback;
+    if(typeof max === "number" && n > max) return max;
+    return n;
 }
 
 async function cleanupActiveJob(tabId, shouldCloseTab){
@@ -231,31 +311,57 @@ async function focusTab(tabId){
 
 function normalizeQueueItem(item){
     if(!item || !item.url) return null;
+    if(!isAllowedUrl(item.url)) return null;
 
+    const action = normalizeAction(item.action);
+    const ext = action === ACTION_IMAGE ? ".png" : ".pdf";
     return {
         jobId: createJobId(),
         url: item.url,
-        filenameHint: sanitizeFilename(item.filenameHint || "slides.pdf")
+        filenameHint: sanitizeFilename(stripExtension(item.filenameHint || "slides"), ext),
+        action: action
     };
 }
 
-function buildDownloadUrl(rawUrl, jobId){
+function normalizeAction(action){
+    return VALID_ACTIONS.indexOf(action) !== -1 ? action : ACTION_DOWNLOAD;
+}
+
+function isAllowedUrl(rawUrl){
+    try {
+        const url = new URL(rawUrl);
+        if(url.protocol !== "https:") return false;
+        if(url.hostname !== ALLOWED_URL_HOST) return false;
+        if(url.pathname.indexOf(ALLOWED_URL_PATH_PREFIX) !== 0) return false;
+        return true;
+    } catch(err){
+        return false;
+    }
+}
+
+function buildDownloadUrl(rawUrl, jobId, action){
     const url = new URL(rawUrl);
     url.searchParams.set("download", "true");
     url.searchParams.set("iniadpp_download", "1");
     url.searchParams.set("iniadpp_job", jobId);
+    url.searchParams.set("iniadpp_action", normalizeAction(action));
     return url.toString();
 }
 
-function sanitizeFilename(filename){
-    let result = String(filename || "slides.pdf").replace(/[\\/:*?"<>|]/g, "_").trim();
-    if(!result){
-        result = "slides.pdf";
+function sanitizeFilename(filename, ext){
+    const safeExt = String(ext || ".pdf").charAt(0) === "." ? String(ext) : "." + String(ext);
+    let base = String(filename || "slides").replace(/[\\/:*?"<>|]/g, "_").trim();
+    if(base.toLowerCase().endsWith(safeExt.toLowerCase())){
+        base = base.slice(0, -safeExt.length);
     }
-    if(result.toLowerCase().slice(-4) !== ".pdf"){
-        result += ".pdf";
+    if(!base.trim()){
+        base = "slides";
     }
-    return result;
+    return base + safeExt;
+}
+
+function stripExtension(name){
+    return String(name || "").replace(/\.(pdf|png)$/i, "");
 }
 
 function createJobId(){
