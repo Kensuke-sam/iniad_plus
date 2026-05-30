@@ -1,9 +1,9 @@
 {
-    "name": "INIADPLUS",
-    "short_name": "INIADPLUS",
-    "version": "1.4.0",
+    "name": "INIAD Plus - MOOCs PDF Saver",
+    "short_name": "INIAD Plus",
+    "version": "1.4.3",
     "manifest_version": 3,
-    "description": "INIAD MOOCs \u306e\u8b1b\u7fa9\u30b9\u30e9\u30a4\u30c9\u3092 PDF / PNG \u753b\u50cf\u3068\u3057\u3066\u4fdd\u5b58\u3057\u3084\u3059\u304f\u3059\u308b\u62e1\u5f35\u6a5f\u80fd",
+    "description": "INIAD Plus \u306f INIAD MOOCs \u306e\u8b1b\u7fa9\u30b9\u30e9\u30a4\u30c9\u3092 PDF \u4fdd\u5b58\u3057\u3084\u3059\u304f\u3059\u308b\u975e\u516c\u5f0f Chrome \u62e1\u5f35\u3067\u3059",
     "homepage_url": "https://github.com/Kensuke-sam/iniad_plus",
     "permissions": [
         "debugger",
@@ -37,6 +37,7 @@
                 "js/json_upload.js",
                 "js/json_timetable_localstorage.js",
                 "js/json_timetable.js",
+                "js/moocs_assignment_tabs.js",
                 "js/tools.js",
                 "js/moocsmemo_btn.js",
                 "js/scrolltop.js",

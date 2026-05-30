@@ -1,5 +1,5 @@
 /* ============================================================
- * INIADPLUS Theme 01
+ * INIAD Plus Theme 01
  * Additive overrides loaded last from manifest.json.
  * ============================================================ */
 
@@ -59,12 +59,33 @@
 .main-sidebar,
 .sidebar {
   background: var(--iniad-sidebar-bg) !important;
-  border-right: 1px solid var(--iniad-border);
+  border-right: 0 !important;
+}
+
+.main-sidebar {
+  /*
+   * Keep the visual separator without shrinking the collapsed sidebar hit area.
+   * A real border narrows nested menu items and creates a tiny dead zone before
+   * the flyout, which can close the menu while moving toward submenu links.
+   */
+  box-shadow: inset -1px 0 0 var(--iniad-border);
+}
+
+.sidebar-menu > li.header {
+  background: #eef3f7 !important;
+  border-bottom: 1px solid var(--iniad-border);
+  border-top: 1px solid var(--iniad-border);
+  color: #5b7489 !important;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 12px 18px 10px !important;
 }
 
 .sidebar-menu > li > a {
   border-left: 3px solid transparent !important;
   color: #7f94a6 !important;
+  min-height: 44px;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
@@ -93,6 +114,79 @@
   background: rgba(255, 255, 255, 0.94) !important;
   border-left-color: var(--iniad-primary) !important;
   color: #3f5668 !important;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > a {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  padding: 12px 18px !important;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > a > i:first-child {
+  flex: 0 0 18px;
+  text-align: center;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > a > span:not(.pull-right-container) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > a .pull-right-container {
+  margin-left: auto;
+  position: static;
+}
+
+.sidebar-menu > li.iniadplus-menu-item.menu-open > a,
+.sidebar-menu > li.iniadplus-menu-item.active > a {
+  background: #ffffff !important;
+  border-left-color: var(--iniad-primary) !important;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > .treeview-menu {
+  background: #eef3f7 !important;
+  border-bottom: 1px solid var(--iniad-border);
+  box-shadow: inset 3px 0 0 rgba(51, 122, 183, 0.2);
+  margin: 0 !important;
+  padding: 6px 0 8px !important;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > .treeview-menu > li > a {
+  color: #44596b !important;
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 18px 9px 50px !important;
+}
+
+.sidebar-menu > li.iniadplus-menu-item > .treeview-menu > li > a:hover {
+  background: rgba(255, 255, 255, 0.78) !important;
+  color: #2f485c !important;
+}
+
+.sidebar-mini.sidebar-collapse
+  .sidebar-menu
+  > li#iniadplus-external-links.menu-open
+  > .treeview-menu {
+  background: #ffffff !important;
+  border: 1px solid var(--iniad-border);
+  box-shadow: 0 12px 24px rgba(15, 30, 50, 0.14);
+  display: block !important;
+  left: 50px !important;
+  position: absolute !important;
+  top: 44px !important;
+  width: 220px !important;
+  z-index: 1000;
+}
+
+.sidebar-mini.sidebar-collapse
+  .sidebar-menu
+  > li#iniadplus-external-links.menu-open
+  > .treeview-menu
+  > li
+  > a {
+  padding: 10px 16px !important;
 }
 
 .sidebar-menu > li:hover > a .sidebar-menu-text,
@@ -177,6 +271,202 @@
 .mycourses-body .btn-primary:focus {
   background-color: var(--iniad-primary-hover) !important;
   border-color: var(--iniad-primary-hover) !important;
+}
+
+.iniadpp-assignment-dashboard {
+  background: var(--iniad-card-bg);
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius-card);
+  box-shadow: var(--iniad-shadow-card);
+  margin: 0 15px 14px;
+  padding: 12px;
+}
+
+.iniadpp-assignment-dashboard__head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.iniadpp-assignment-dashboard__head h2 {
+  color: var(--iniad-text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.iniadpp-assignment-dashboard__head p {
+  color: var(--iniad-text-sub);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 2px 0 0;
+}
+
+.iniadpp-assignment-dashboard__refresh {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  color: var(--iniad-primary);
+  display: inline-flex;
+  flex: 0 0 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.iniadpp-assignment-dashboard__refresh:hover,
+.iniadpp-assignment-dashboard__refresh:focus {
+  background: #eef3f7;
+  color: var(--iniad-primary-hover);
+}
+
+.iniadpp-assignment-dashboard__stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.iniadpp-assignment-dashboard__stat {
+  background: #f8fafc;
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  color: var(--iniad-text);
+  min-height: 52px;
+  padding: 8px;
+  text-align: left;
+}
+
+.iniadpp-assignment-dashboard__stat:not(:disabled):hover,
+.iniadpp-assignment-dashboard__stat:not(:disabled):focus {
+  background: #eef3f7;
+  border-color: rgba(51, 122, 183, 0.36);
+}
+
+.iniadpp-assignment-dashboard__stat:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.iniadpp-assignment-dashboard__count {
+  color: var(--iniad-primary);
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.iniadpp-assignment-dashboard__stat span:last-child {
+  color: var(--iniad-text-sub);
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.iniadpp-assignment-dashboard__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.iniadpp-assignment-dashboard__item {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  color: var(--iniad-text) !important;
+  display: inline-flex;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  text-decoration: none !important;
+}
+
+.iniadpp-assignment-dashboard__item:hover,
+.iniadpp-assignment-dashboard__item:focus {
+  border-color: rgba(51, 122, 183, 0.42);
+  color: var(--iniad-primary-hover) !important;
+}
+
+.iniadpp-assignment-dashboard__badge {
+  border-radius: var(--iniad-radius);
+  color: #ffffff;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
+.iniadpp-assignment-dashboard__badge--attendance {
+  background: var(--iniad-success);
+}
+
+.iniadpp-assignment-dashboard__badge--submit {
+  background: var(--iniad-danger);
+}
+
+.iniadpp-assignment-dashboard__badge--unknown {
+  background: var(--iniad-warning);
+}
+
+.iniadpp-assignment-dashboard__page {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.iniadpp-assignment-dashboard__empty {
+  background: #f8fafc;
+  border: 1px dashed var(--iniad-border);
+  border-radius: var(--iniad-radius);
+  color: var(--iniad-text-sub);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.content-wrapper .pagination > li.iniadpp-assignment-tab-attendance > a,
+.content-wrapper .pagination > li.iniadpp-assignment-tab-attendance > span,
+.content-wrapper .pagination > li.active.iniadpp-assignment-tab-attendance > a,
+.content-wrapper .pagination > li.active.iniadpp-assignment-tab-attendance > span {
+  background-color: var(--iniad-success) !important;
+  border-color: var(--iniad-success) !important;
+  color: #ffffff !important;
+}
+
+.content-wrapper .pagination > li.iniadpp-assignment-tab-submit > a,
+.content-wrapper .pagination > li.iniadpp-assignment-tab-submit > span,
+.content-wrapper .pagination > li.active.iniadpp-assignment-tab-submit > a,
+.content-wrapper .pagination > li.active.iniadpp-assignment-tab-submit > span {
+  background-color: var(--iniad-danger) !important;
+  border-color: var(--iniad-danger) !important;
+  color: #ffffff !important;
+}
+
+.content-wrapper .pagination > li.iniadpp-assignment-tab-attendance > a:hover,
+.content-wrapper .pagination > li.iniadpp-assignment-tab-attendance > a:focus {
+  background-color: var(--iniad-success-hover) !important;
+  border-color: var(--iniad-success-hover) !important;
+  color: #ffffff !important;
+}
+
+.content-wrapper .pagination > li.iniadpp-assignment-tab-submit > a:hover,
+.content-wrapper .pagination > li.iniadpp-assignment-tab-submit > a:focus {
+  background-color: #c9302c !important;
+  border-color: #c9302c !important;
+  color: #ffffff !important;
 }
 
 .content-wrapper .btn-success,
@@ -287,21 +577,6 @@
   color: var(--iniad-primary);
   font-size: 13px;
   word-break: break-all;
-}
-
-#slidebutton-div {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(4px);
-  border: 1px solid var(--iniad-border);
-  border-radius: var(--iniad-radius);
-  height: auto !important;
-  padding: 4px;
-  width: auto !important;
-}
-
-#slidearrow {
-  color: var(--iniad-primary);
-  font-size: 200%;
 }
 
 #slidedefault {

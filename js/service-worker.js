@@ -3,22 +3,18 @@ const STORAGE_KEYS = {
     active: "iniadpp_pdf_active"
 };
 
-const ACTION_DOWNLOAD = "download";
-const ACTION_IMAGE = "image";
-const VALID_ACTIONS = [ACTION_DOWNLOAD, ACTION_IMAGE];
-
 const ALLOWED_URL_HOST = "docs.google.com";
 const ALLOWED_URL_PATH_PREFIX = "/presentation/d/e/";
 
 chrome.runtime.onInstalled.addListener(function(){
     recoverState().catch(function(err){
-        console.error("[INIADPLUS PDF] 初期化失敗:", err);
+        console.error("[INIAD Plus PDF] 初期化失敗:", err);
     });
 });
 
 chrome.runtime.onStartup.addListener(function(){
     recoverState().catch(function(err){
-        console.error("[INIADPLUS PDF] 復旧失敗:", err);
+        console.error("[INIAD Plus PDF] 復旧失敗:", err);
     });
 });
 
@@ -29,7 +25,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
         handleEnqueue(message.items || [])
             .then(function(result){ sendResponse(result); })
             .catch(function(err){
-                console.error("[INIADPLUS PDF] enqueue失敗:", err);
+                console.error("[INIAD Plus PDF] enqueue失敗:", err);
                 sendResponse({ ok: false, error: err && err.message ? err.message : String(err) });
             });
         return true;
@@ -39,7 +35,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
         handlePdfReady(sender.tab, message)
             .then(function(result){ sendResponse(result); })
             .catch(function(err){
-                console.error("[INIADPLUS PDF] pdf-ready失敗:", err);
+                console.error("[INIAD Plus PDF] pdf-ready失敗:", err);
                 sendResponse({ ok: false, error: err && err.message ? err.message : String(err) });
             });
         return true;
@@ -49,7 +45,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
         handlePdfFailed(sender.tab, message)
             .then(function(result){ sendResponse(result); })
             .catch(function(err){
-                console.error("[INIADPLUS PDF] pdf-failed失敗:", err);
+                console.error("[INIAD Plus PDF] pdf-failed失敗:", err);
                 sendResponse({ ok: false, error: err && err.message ? err.message : String(err) });
             });
         return true;
@@ -58,13 +54,13 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
 
 chrome.tabs.onRemoved.addListener(function(tabId){
     handleTabRemoved(tabId).catch(function(err){
-        console.error("[INIADPLUS PDF] タブ削除処理失敗:", err);
+        console.error("[INIAD Plus PDF] タブ削除処理失敗:", err);
     });
 });
 
 chrome.debugger.onDetach.addListener(function(source, reason){
     handleDebuggerDetach(source, reason).catch(function(err){
-        console.error("[INIADPLUS PDF] debugger detach処理失敗:", err);
+        console.error("[INIAD Plus PDF] debugger detach処理失敗:", err);
     });
 });
 
@@ -95,18 +91,16 @@ async function handlePdfReady(tab, message){
         return { ok: false, error: "inactive-tab" };
     }
 
-    const action = normalizeAction(state.active.action);
-    const ext = action === ACTION_IMAGE ? ".png" : ".pdf";
     const baseHint = stripExtension(message.filename || state.active.filenameHint || "slides");
-    const filename = sanitizeFilename(baseHint, ext);
+    const filename = sanitizeFilename(baseHint, ".pdf");
 
     try {
-        await processExportFromTab(tab.id, filename, action, message);
+        await processExportFromTab(tab.id, filename);
         await cleanupActiveJob(tab.id, true);
         await processQueue();
-        return { ok: true, filename: filename, action: action };
+        return { ok: true, filename: filename };
     } catch(err){
-        console.error("[INIADPLUS PDF] エクスポート処理失敗:", err);
+        console.error("[INIAD Plus PDF] エクスポート処理失敗:", err);
         await focusTab(tab.id);
         await cleanupActiveJob(tab.id, false);
         await processQueue();
@@ -117,7 +111,7 @@ async function handlePdfReady(tab, message){
 async function handlePdfFailed(tab, message){
     const state = await getState();
     if(tab && state.active && state.active.tabId === tab.id){
-        console.error("[INIADPLUS PDF] PDF生成失敗:", message && message.message ? message.message : "unknown error");
+        console.error("[INIAD Plus PDF] PDF生成失敗:", message && message.message ? message.message : "unknown error");
         await focusTab(tab.id);
         await cleanupActiveJob(tab.id, false);
         await processQueue();
@@ -149,7 +143,7 @@ async function processQueue(){
 
     const nextJob = state.queue.shift();
     const tab = await chrome.tabs.create({
-        url: buildDownloadUrl(nextJob.url, nextJob.jobId, nextJob.action),
+        url: buildDownloadUrl(nextJob.url, nextJob.jobId),
         active: false
     });
 
@@ -157,7 +151,6 @@ async function processQueue(){
         jobId: nextJob.jobId,
         url: nextJob.url,
         filenameHint: nextJob.filenameHint,
-        action: nextJob.action,
         tabId: tab.id
     };
 
@@ -176,7 +169,7 @@ async function recoverState(){
     }
 }
 
-async function processExportFromTab(tabId, filename, action, message){
+async function processExportFromTab(tabId, filename){
     const debuggee = { tabId: tabId };
     let attached = false;
 
@@ -184,18 +177,13 @@ async function processExportFromTab(tabId, filename, action, message){
         await chrome.debugger.attach(debuggee, "1.3");
         attached = true;
 
-        if(action === ACTION_IMAGE){
-            await exportPagesAsImages(debuggee, filename, message);
-            return;
-        }
-
         await exportAsPdf(debuggee, filename);
     } finally {
         if(attached){
             try {
                 await chrome.debugger.detach(debuggee);
             } catch(err){
-                console.warn("[INIADPLUS PDF] debugger detach失敗:", err);
+                console.warn("[INIAD Plus PDF] debugger detach失敗:", err);
             }
         }
     }
@@ -226,72 +214,12 @@ async function exportAsPdf(debuggee, filename){
     });
 }
 
-async function exportPagesAsImages(debuggee, filename, message){
-    const pageRects = Array.isArray(message && message.pageRects) ? message.pageRects : [];
-    const dpr = sanitizePositiveNumber(message && message.devicePixelRatio, 1, 4);
-
-    if(!pageRects.length){
-        throw new Error("画像化対象のスライドが見つかりませんでした");
-    }
-
-    const baseName = stripExtension(filename);
-    const padWidth = String(pageRects.length).length;
-
-    for(let i = 0; i < pageRects.length; i++){
-        const rect = pageRects[i];
-        if(!isValidRect(rect)){
-            throw new Error("不正なスライド座標を検出しました (page " + (i + 1) + ")");
-        }
-
-        const shot = await chrome.debugger.sendCommand(debuggee, "Page.captureScreenshot", {
-            format: "png",
-            captureBeyondViewport: true,
-            fromSurface: true,
-            clip: {
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
-                scale: dpr
-            }
-        });
-
-        if(!shot || !shot.data){
-            throw new Error("画像データを取得できませんでした (page " + (i + 1) + ")");
-        }
-
-        const pageFilename = baseName + "_p" + String(i + 1).padStart(padWidth, "0") + ".png";
-        await chrome.downloads.download({
-            url: "data:image/png;base64," + shot.data,
-            filename: pageFilename,
-            saveAs: false,
-            conflictAction: "uniquify"
-        });
-    }
-}
-
-function isValidRect(rect){
-    if(!rect) return false;
-    const keys = ["x", "y", "width", "height"];
-    for(const k of keys){
-        if(typeof rect[k] !== "number" || !isFinite(rect[k])) return false;
-    }
-    return rect.width > 0 && rect.height > 0;
-}
-
-function sanitizePositiveNumber(value, fallback, max){
-    const n = Number(value);
-    if(!isFinite(n) || n <= 0) return fallback;
-    if(typeof max === "number" && n > max) return max;
-    return n;
-}
-
 async function cleanupActiveJob(tabId, shouldCloseTab){
     if(shouldCloseTab){
         try {
             await chrome.tabs.remove(tabId);
         } catch(err){
-            console.warn("[INIADPLUS PDF] タブ close 失敗:", err);
+            console.warn("[INIAD Plus PDF] タブ close 失敗:", err);
         }
     }
     await clearActive();
@@ -305,7 +233,7 @@ async function focusTab(tabId){
         }
         await chrome.tabs.update(tabId, { active: true });
     } catch(err){
-        console.warn("[INIADPLUS PDF] タブ focus 失敗:", err);
+        console.warn("[INIAD Plus PDF] タブ focus 失敗:", err);
     }
 }
 
@@ -313,18 +241,11 @@ function normalizeQueueItem(item){
     if(!item || !item.url) return null;
     if(!isAllowedUrl(item.url)) return null;
 
-    const action = normalizeAction(item.action);
-    const ext = action === ACTION_IMAGE ? ".png" : ".pdf";
     return {
         jobId: createJobId(),
         url: item.url,
-        filenameHint: sanitizeFilename(stripExtension(item.filenameHint || "slides"), ext),
-        action: action
+        filenameHint: sanitizeFilename(stripExtension(item.filenameHint || "slides"), ".pdf")
     };
-}
-
-function normalizeAction(action){
-    return VALID_ACTIONS.indexOf(action) !== -1 ? action : ACTION_DOWNLOAD;
 }
 
 function isAllowedUrl(rawUrl){
@@ -339,12 +260,11 @@ function isAllowedUrl(rawUrl){
     }
 }
 
-function buildDownloadUrl(rawUrl, jobId, action){
+function buildDownloadUrl(rawUrl, jobId){
     const url = new URL(rawUrl);
     url.searchParams.set("download", "true");
     url.searchParams.set("iniadpp_download", "1");
     url.searchParams.set("iniadpp_job", jobId);
-    url.searchParams.set("iniadpp_action", normalizeAction(action));
     return url.toString();
 }
 

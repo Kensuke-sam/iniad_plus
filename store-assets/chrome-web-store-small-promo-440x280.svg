@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <rect width="440" height="280" fill="#0f766e"/>
+  <rect x="28" y="28" width="384" height="224" rx="14" fill="#ffffff"/>
+  <text x="54" y="82" font-size="34" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#0f172a">INIAD Plus</text>
+  <text x="54" y="120" font-size="20" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1677c9">MOOCs PDF Saver</text>
+  <text x="54" y="164" font-size="16" font-family="Helvetica, Arial, sans-serif" fill="#334155">講義スライドをPDF保存</text>
+  <text x="54" y="190" font-size="16" font-family="Helvetica, Arial, sans-serif" fill="#334155">ブラウザ内で完結</text>
+  <rect x="54" y="210" width="156" height="34" rx="17" fill="#f59e0b"/>
+  <text x="80" y="233" font-size="15" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">PDF 保存</text>
+  <rect x="264" y="150" width="100" height="82" rx="8" fill="#e0f2fe"/>
+  <text x="286" y="200" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1677c9">PDF</text>
+</svg>
