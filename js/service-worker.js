@@ -3,6 +3,7 @@ const STORAGE_KEYS = {
     active: "iniadpp_pdf_active"
 };
 
+const AUTO_SAVE_PERMISSIONS = ["debugger", "downloads"];
 const ALLOWED_URL_HOST = "docs.google.com";
 const ALLOWED_URL_PATH_PREFIX = "/presentation/d/e/";
 
@@ -73,12 +74,21 @@ async function handleEnqueue(items){
         return { ok: false, error: "no-items" };
     }
 
+    const autoSave = await ensureAutoSavePermissions();
+    const queueItems = normalizedItems.map(function(item){
+        return Object.assign({}, item, { autoSave: autoSave });
+    });
+
     const state = await getState();
-    state.queue = state.queue.concat(normalizedItems);
+    state.queue = state.queue.concat(queueItems);
     await setState(state);
     await processQueue();
 
-    return { ok: true, queued: normalizedItems.length };
+    return {
+        ok: true,
+        queued: normalizedItems.length,
+        manualSave: !autoSave
+    };
 }
 
 async function handlePdfReady(tab, message){
@@ -93,6 +103,13 @@ async function handlePdfReady(tab, message){
 
     const baseHint = stripExtension(message.filename || state.active.filenameHint || "slides");
     const filename = sanitizeFilename(baseHint, ".pdf");
+
+    if(state.active.autoSave === false){
+        await focusTab(tab.id);
+        await cleanupActiveJob(tab.id, false);
+        await processQueue();
+        return { ok: false, error: "manual-save-required" };
+    }
 
     try {
         await processExportFromTab(tab.id, filename);
@@ -144,13 +161,14 @@ async function processQueue(){
     const nextJob = state.queue.shift();
     const tab = await chrome.tabs.create({
         url: buildDownloadUrl(nextJob.url, nextJob.jobId),
-        active: false
+        active: nextJob.autoSave === false
     });
 
     state.active = {
         jobId: nextJob.jobId,
         url: nextJob.url,
         filenameHint: nextJob.filenameHint,
+        autoSave: nextJob.autoSave !== false,
         tabId: tab.id
     };
 
@@ -170,6 +188,11 @@ async function recoverState(){
 }
 
 async function processExportFromTab(tabId, filename){
+    const hasAutoSavePermissions = await ensureAutoSavePermissions();
+    if(!hasAutoSavePermissions){
+        throw new Error("manual-save-required");
+    }
+
     const debuggee = { tabId: tabId };
     let attached = false;
 
@@ -186,6 +209,31 @@ async function processExportFromTab(tabId, filename){
                 console.warn("[INIAD Plus PDF] debugger detach失敗:", err);
             }
         }
+    }
+}
+
+async function ensureAutoSavePermissions(){
+    if(!chrome.permissions || !chrome.permissions.contains || !chrome.permissions.request){
+        return false;
+    }
+
+    try {
+        const alreadyGranted = await chrome.permissions.contains({
+            permissions: AUTO_SAVE_PERMISSIONS
+        });
+        if(alreadyGranted) return true;
+    } catch(err){
+        console.warn("[INIAD Plus PDF] optional permission check failed:", err);
+        return false;
+    }
+
+    try {
+        return await chrome.permissions.request({
+            permissions: AUTO_SAVE_PERMISSIONS
+        });
+    } catch(err){
+        console.warn("[INIAD Plus PDF] optional permission request failed:", err);
+        return false;
     }
 }
 

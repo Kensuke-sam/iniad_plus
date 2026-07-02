@@ -2,9 +2,9 @@
 
 <img src="img/iniadpp128.png" width="96" alt="INIAD Plus icon">
 
-# INIAD Plus - MOOCs PDF Saver
+# INIAD Plus - MOOCs PDF Helper
 
-**INIAD MOOCs の講義スライドを PDF 保存しやすくする Chrome / Firefox 拡張**
+**INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする Chrome / Firefox 拡張**
 
 [![GitHub](https://img.shields.io/badge/source-GitHub-181717?logo=github)](https://github.com/Kensuke-sam/iniad_plus)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%2F%20Firefox-4285F4?logo=firefoxbrowser&logoColor=fff)](https://www.mozilla.org/firefox/)
@@ -16,7 +16,7 @@
 
 ## これは何？
 
-**INIAD Plus は、INIAD MOOCs の講義スライドを PDF 保存しやすくする非公式ブラウザー拡張**です。  
+**INIAD Plus は、INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする非公式ブラウザー拡張**です。
 **[akahoshi1421/INIAD-](https://github.com/akahoshi1421/INIAD-) のフォーク**で、**スライドのダウンロードを HTML 出力から PDF 出力に差し替えた版**です。
 
 - 拡張機能本体の全機能・背景・使い方は **[本家 README](https://github.com/akahoshi1421/INIAD-#readme)** を参照してください
@@ -24,9 +24,9 @@
 
 ## 名前について
 
-このフォークの表示名は **INIAD Plus** です。検索やストア掲載では、既存の類似名と混同しないように **INIAD MOOCs の講義スライドを PDF 保存できる拡張機能** として説明しています。
+このフォークの表示名は **INIAD Plus** です。検索やストア掲載では、既存の類似名と混同しないように **INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする拡張機能** として説明しています。
 
-ストア掲載では **INIAD Plus - MOOCs PDF Saver** を正式名にし、`INIAD Plus`、`INIAD MOOCs`、`PDF 保存` が自然に伝わる表記へ統一しています。
+ストア掲載では **INIAD Plus - MOOCs PDF Helper** を正式名にし、`INIAD Plus`、`INIAD MOOCs`、`学習用 PDF` が自然に伝わる表記へ統一しています。
 
 ---
 
@@ -34,9 +34,10 @@
 
 | | 本家 | 本フォーク |
 | --- | --- | --- |
-| スライドのダウンロード形式 | HTML | **PDF**（A4 横 / 1 ページ 1 スライド） |
-| 自動保存 | — | 拡張機能が順番に処理して自動ダウンロード |
-| 追加ライブラリ | なし | なし（Chrome ネイティブの印刷エンジン / DevTools プロトコルで出力） |
+| スライドの保存形式 | HTML | **PDF 印刷用ページ**（A4 横 / 1 ページ 1 スライド） |
+| Chrome Web Store 提出版 | — | **権限なし / background なし / 印刷ダイアログ保存** |
+| 追加ライブラリ | なし | なし |
+| 課題・出席まとめ | — | **講義ページのタブを「出席 / 未提出 / 提出済み」に自動分類して強調表示** |
 | その他の機能 | — | 本家と同一 |
 
 ---
@@ -48,6 +49,8 @@
 - Chromium 系ブラウザ（Edge / Brave / Arc など）でも同じ手順で動きます
 
 > Chrome Web Store 公開準備用の素材と提出メモは [`docs/chrome-web-store.md`](docs/chrome-web-store.md) にまとめています。
+
+> Chrome Web Store 向け ZIP は、審査で見える機能と掲載説明を一致させるため、PDF 作成補助と課題・出席まとめに必要な最小ファイルだけを含めています。リポジトリには、フォーク元由来のローカル利用向け補助機能も残っています。
 
 ---
 
@@ -89,9 +92,9 @@ git clone https://github.com/Kensuke-sam/iniad_plus.git
 ## 保存の使い方
 
 1. INIAD MOOCs の講義ページ（スライドが埋め込まれているページ）を開く
-2. ページに追加される **「スライドをPDFでダウンロード」** ボタン、または複数資料の **「この講義のスライドを一括PDFダウンロード」** / **「資料1をPDFでダウンロード」** ボタンを押します
-3. 拡張機能が講義内の Google Slides を順番に開き、PDF を自動でダウンロードします
-   - PDF は **A4 横 / 1 ページ 1 スライド** で 1 ファイルとして保存
+2. ページに追加される **「スライドを学習用PDFにする」** ボタン、または複数資料の **「この講義のスライドを一括で学習用PDFにする」** / **「資料1を学習用PDFにする」** ボタンを押します
+3. 拡張機能が講義内の Google Slides を順番に開き、PDF として印刷保存できるページを作成します
+   - PDF は **A4 横 / 1 ページ 1 スライド** で、資料 1 件につき 1 ファイルとして保存
 
 > ⏳ 1 ページずつ描画完了を確認しながら取り込むため、スライド枚数が多い講義だと **数秒〜数十秒** かかります。取り込み中はタブを閉じたり他の操作をしないでください。
 
@@ -116,7 +119,7 @@ ZIP でインストールした場合は、最新版の ZIP を再ダウンロ�
 
 - ストア掲載文面、審査向け説明、単一目的の説明は [`docs/chrome-web-store.md`](docs/chrome-web-store.md)
 - プライバシー説明は [`docs/privacy.md`](docs/privacy.md)
-- 提出用 ZIP は `./scripts/package-webstore.sh` で作成
+- 提出用 ZIP は `./scripts/package-webstore.sh` で作成。Chrome Web Store 向け ZIP には PDF 作成補助と課題・出席まとめに必要な最小ファイルだけを含め、拡張機能権限と background service worker は含めません
 - スクリーンショット素材は `store-assets/` 配下
 
 提出用 ZIP の生成:
@@ -125,7 +128,7 @@ ZIP でインストールした場合は、最新版の ZIP を再ダウンロ�
 ./scripts/package-webstore.sh
 ```
 
-実行すると `dist/iniad_plus-chrome-web-store-v<version>.zip` が作成されます。`debugs/` や既存の配布用 ZIP など、審査に不要なファイルは含めません。
+実行すると `dist/iniad_plus-chrome-web-store-v<version>.zip` が作成されます。`debugs/`、background service worker、既存の配布用 ZIP など、審査に不要なファイルは含めません。
 
 Firefox Add-ons 向けの ZIP は次のコマンドで作成できます。
 
@@ -133,7 +136,7 @@ Firefox Add-ons 向けの ZIP は次のコマンドで作成できます。
 ./scripts/package-firefox.sh
 ```
 
-実行すると `dist/iniad_plus-firefox-addons-v<version>.zip` が作成されます。Firefox では Chrome の `debugger` API が使えないため、自動保存ではなく印刷ダイアログから PDF に保存します。
+実行すると `dist/iniad_plus-firefox-addons-v<version>.zip` が作成されます。Firefox 版も印刷ダイアログから PDF に保存します。
 
 ---
 
@@ -156,7 +159,7 @@ Firefox Add-ons 向けの ZIP は次のコマンドで作成できます。
 | 症状 | 確認すること |
 | --- | --- |
 | ボタンが出ない | INIAD Plus が有効になっているか。講義ページを F5 でリロード |
-| PDF が自動保存されない | 置き換わったページ上部の緑バーの「印刷ダイアログを開く」ボタンから手動保存 |
+| PDF が保存できない | 置き換わったページ上部の緑バーの「印刷ダイアログを開く」ボタンから PDF として保存 |
 | 一部のスライドが空白になる | Console に `[INIAD Plus PDF]` のログを出し、どの page で止まったかを Issue で報告 |
 
 拡張機能本体（PDF 以外の機能）の不具合は [本家リポジトリ](https://github.com/akahoshi1421/INIAD-) 側に送ってください。
@@ -175,4 +178,4 @@ Firefox Add-ons 向けの ZIP は次のコマンドで作成できます。
 
 - **原作**: [akahoshi1421/INIAD-](https://github.com/akahoshi1421/INIAD-)（作者: [@akahoshi1421](https://github.com/akahoshi1421)）
 - **本フォーク**: [@Kensuke-sam](https://github.com/Kensuke-sam) による PDF 対応版
-- **ライセンス**: 原作のライセンス（自由 / 一部 MIT）を継承。詳細は原作の [README](https://github.com/akahoshi1421/INIAD-#readme) を参照してください。
+- **ライセンス**: 原作由来部分は原作のライセンス表記（自由 / 一部 MIT）を継承し、本フォークの追加変更は MIT License とします。詳細は [`LICENSE`](LICENSE) と [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) を参照してください。

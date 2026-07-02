@@ -20,7 +20,7 @@ OUTPUT_ZIP="$DIST_DIR/iniad_plus-firefox-addons-v${VERSION}.zip"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR" "$DIST_DIR"
 
-for path in manifest.json css js lib firefox; do
+for path in manifest.json css js lib firefox LICENSE THIRD_PARTY_NOTICES.md; do
   if [ ! -e "$path" ]; then
     echo "Missing required path: $path" >&2
     exit 1
@@ -42,12 +42,16 @@ stage = Path(sys.argv[2])
 manifest_path = stage / "manifest.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-manifest["description"] = "INIAD Plus は INIAD MOOCs の講義スライドを PDF 保存しやすくする非公式 Firefox 拡張です"
+manifest["name"] = "INIAD Plus - MOOCs PDF Helper"
+manifest["description"] = "INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする非公式 Firefox 拡張です"
 manifest["permissions"] = [
     permission
     for permission in manifest.get("permissions", [])
-    if permission != "debugger"
+    if permission not in ("debugger", "storage")
 ]
+if not manifest["permissions"]:
+    manifest.pop("permissions", None)
+manifest.pop("optional_permissions", None)
 manifest["background"] = {
     "scripts": ["firefox/background.js"]
 }
@@ -83,7 +87,7 @@ rm -f "$OUTPUT_ZIP"
 
 (
   cd "$STAGE_DIR"
-  zip -qr "$OUTPUT_ZIP" manifest.json css firefox img js lib
+  zip -qr "$OUTPUT_ZIP" manifest.json LICENSE THIRD_PARTY_NOTICES.md css firefox img js lib
 )
 
 echo "Created $OUTPUT_ZIP"

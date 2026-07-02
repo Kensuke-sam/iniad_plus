@@ -12,7 +12,7 @@
   <rect width="640" height="400" fill="#f6f8fb"/>
   <rect x="0" y="0" width="640" height="58" fill="url(#top)"/>
   <text x="28" y="38" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">INIAD Plus</text>
-  <text x="500" y="36" font-size="15" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">MOOCs PDF Saver</text>
+  <text x="612" y="36" text-anchor="end" font-size="15" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">MOOCs PDF Helper</text>
 
   <g transform="translate(28 84)">
     <text x="0" y="0" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1d2939">INIAD MOOCs の講義スライドを PDF 保存</text>
@@ -32,7 +32,7 @@
     <text x="230" y="78" font-size="20" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1d2939">講義スライド資料</text>
     <text x="230" y="108" font-size="15" font-family="Helvetica, Arial, sans-serif" fill="#52677f">1ページ1スライド / A4横でPDF化</text>
     <rect x="230" y="132" width="218" height="44" rx="8" fill="#05a66b"/>
-    <text x="254" y="160" font-size="17" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">スライドをPDFで保存</text>
+    <text x="339" y="160" text-anchor="middle" font-size="15" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">スライドを学習用PDFにする</text>
 
     <rect x="472" y="62" width="74" height="116" rx="8" fill="#fff4e5"/>
     <text x="494" y="118" font-size="30" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#f59e0b">PDF</text>

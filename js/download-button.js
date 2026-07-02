@@ -16,7 +16,7 @@ $(function(){
     } else {
         const $bulkRow = $('<div class="iniadpp-download-row"></div>');
         $bulkRow.append(createButton({
-            text: "この講義のスライドを一括PDFダウンロード",
+            text: "この講義のスライドを一括で学習用PDFにする",
             className: "btn-success",
             items: presentations
         }));
@@ -77,7 +77,7 @@ function getMountPoint(){
 function buildActionRow(opts){
     const $row = $('<div class="iniadpp-download-row"></div>');
     $row.append(createButton({
-        text: opts.label + "をPDFでダウンロード",
+        text: opts.label + "を学習用PDFにする",
         className: opts.mainClass,
         items: opts.items
     }));
@@ -101,34 +101,43 @@ $(document).on("click", ".iniadpp-download-button", async function(){
     try {
         const runtimeApi = getRuntimeApi();
         if(runtimeApi){
-            const response = await runtimeApi.sendMessage({
-                type: "iniadpp:enqueue",
-                items: items
-            });
-            if(!response || !response.ok){
-                throw new Error(response && response.error ? response.error : "enqueue failed");
+            try {
+                const response = await runtimeApi.sendMessage({
+                    type: "iniadpp:enqueue",
+                    items: items
+                });
+                if(!response || !response.ok){
+                    throw new Error(response && response.error ? response.error : "enqueue failed");
+                }
+                alert(response.manualSave
+                    ? buildManualSaveMessage(items.length)
+                    : buildEnqueueMessage(items.length));
+                return;
+            } catch(err){
+                console.warn("[INIAD Plus PDF] background queue unavailable. Falling back to print-ready pages:", err);
             }
-            alert(response.manualSave
-                ? buildManualSaveMessage(items.length)
-                : buildEnqueueMessage(items.length));
-            return;
         }
 
-        for(let i = 0; i < items.length; i++){
-            window.open(createManualDownloadUrl(items[i].url), "_blank");
-        }
+        openManualSavePages(items);
+        alert(buildManualSaveMessage(items.length));
     } catch(err){
-        console.error("[INIAD Plus PDF] キュー登録失敗:", err);
+        console.error("[INIAD Plus PDF] PDF処理開始失敗:", err);
         alert("PDF処理の開始に失敗しました。時間をおいてもう一度試してください。");
     } finally {
         $button.prop("disabled", false);
     }
 });
 
+function openManualSavePages(items){
+    for(let i = 0; i < items.length; i++){
+        window.open(createManualDownloadUrl(items[i].url), "_blank");
+    }
+}
+
 function buildEnqueueMessage(count){
     return count === 1
-        ? "PDF の生成を開始しました。ダウンロード完了まで少し待ってください。"
-        : count + " 件の PDF 生成を順番に開始しました。ダウンロード完了まで少し待ってください。";
+        ? "学習用 PDF の作成を開始しました。完了まで少し待ってください。"
+        : count + " 件の学習用 PDF 作成を順番に開始しました。完了まで少し待ってください。";
 }
 
 function buildManualSaveMessage(count){
@@ -148,11 +157,21 @@ function createManualDownloadUrl(rawUrl){
 }
 
 function getRuntimeApi(){
-    if(typeof browser !== "undefined" && browser.runtime && browser.runtime.sendMessage){
+    if(typeof browser !== "undefined" && browser.runtime && browser.runtime.sendMessage && hasBackgroundRuntime(browser.runtime)){
         return browser.runtime;
     }
-    if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage){
+    if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage && hasBackgroundRuntime(chrome.runtime)){
         return chrome.runtime;
     }
     return null;
+}
+
+function hasBackgroundRuntime(runtime){
+    if(!runtime || !runtime.getManifest) return false;
+    try {
+        const manifest = runtime.getManifest();
+        return !!(manifest && manifest.background);
+    } catch(err){
+        return false;
+    }
 }

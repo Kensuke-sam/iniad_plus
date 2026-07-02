@@ -3,7 +3,7 @@
   <rect x="0" y="0" width="1400" height="560" fill="#0f766e"/>
   <rect x="64" y="64" width="1272" height="432" rx="24" fill="#ffffff"/>
   <text x="112" y="168" font-size="72" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#0f172a">INIAD Plus</text>
-  <text x="116" y="226" font-size="34" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1677c9">MOOCs PDF Saver</text>
+  <text x="116" y="226" font-size="34" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#1677c9">MOOCs PDF Helper</text>
   <text x="116" y="298" font-size="30" font-family="Helvetica, Arial, sans-serif" fill="#334155">INIAD MOOCs の講義スライドを PDF 保存。</text>
   <rect x="116" y="352" width="260" height="60" rx="30" fill="#f59e0b"/>
   <text x="164" y="392" font-size="25" font-weight="700" font-family="Helvetica, Arial, sans-serif" fill="#ffffff">PDF 保存に特化</text>

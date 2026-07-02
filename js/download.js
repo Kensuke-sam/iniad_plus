@@ -92,8 +92,11 @@ async function runPdfExport(){
     let prevSvgSnapshot = null;
 
     for(let i = 1; i <= totalPages; i++){
+        let displayedPage = null;
         await waitFor(function(){
-            if(getCurrentPage() !== i) return false;
+            const current = getCurrentPage();
+            // 非表示スライドはビューアが飛ばすため、i より先のページが表示されたらそれを取り込む
+            if(current === null || current < i) return false;
             const s = $('.punch-viewer-svgpage-svgcontainer:last>svg').get(0);
             if(!s) return false;
             if(!s.children || s.children.length === 0) return false;
@@ -101,8 +104,14 @@ async function runPdfExport(){
                 const snap = s.childElementCount + ":" + (s.getAttribute("viewBox") || "") + ":" + s.innerHTML.length;
                 if(snap === prevSvgSnapshot) return false;
             }
+            displayedPage = current;
             return true;
         }, {timeout: 20000, message: "page " + i + " のスライド描画待機がタイムアウトしました"});
+
+        if(displayedPage !== null && displayedPage > i){
+            console.warn("[INIAD Plus PDF] page " + i + " は非表示スライドのためスキップし、page " + displayedPage + " を取り込みます");
+            i = displayedPage;
+        }
 
         await sleep(150);
 
@@ -222,32 +231,45 @@ async function runPdfExport(){
 
     await sleep(250);
 
-    const autoSaved = await requestExport({
+    const exportResult = await requestExport({
         filename: safeName + ".pdf"
     });
-    if(autoSaved){
-        updateHint("PDF をダウンロードしています。このタブは自動で閉じます。");
+    if(exportResult === "saved"){
+        updateHint("PDF を保存しています。このタブは自動で閉じます。");
         return;
     }
 
-    updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
+    if(exportResult === "manual"){
+        updateHint("印刷ダイアログから PDF に保存してください。");
+    } else {
+        updateHint("自動保存に失敗しました。印刷ダイアログから PDF に保存してください。");
+    }
     setTimeout(triggerPrint, 800);
 }
+
+const MANUAL_SAVE_ERRORS = [
+    "manual-save-required",
+    "firefox-manual-save-required",
+    "inactive-tab"
+];
 
 async function requestExport(payload){
     const runtimeApi = getRuntimeApi();
     if(!runtimeApi){
-        return false;
+        return "manual";
     }
 
     try {
         const response = await runtimeApi.sendMessage(Object.assign({
             type: "iniadpp:pdf-ready"
         }, payload));
-        return !!(response && response.ok);
+        if(response && response.ok) return "saved";
+        const reason = response && response.error ? response.error : "";
+        if(MANUAL_SAVE_ERRORS.indexOf(reason) !== -1) return "manual";
+        return "failed";
     } catch(err){
         console.error("[INIAD Plus PDF] 自動保存要求失敗:", err);
-        return false;
+        return "failed";
     }
 }
 
@@ -276,11 +298,21 @@ function notifyFailure(err){
 }
 
 function getRuntimeApi(){
-    if(typeof browser !== "undefined" && browser.runtime && browser.runtime.sendMessage){
+    if(typeof browser !== "undefined" && browser.runtime && browser.runtime.sendMessage && hasBackgroundRuntime(browser.runtime)){
         return browser.runtime;
     }
-    if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage){
+    if(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage && hasBackgroundRuntime(chrome.runtime)){
         return chrome.runtime;
     }
     return null;
+}
+
+function hasBackgroundRuntime(runtime){
+    if(!runtime || !runtime.getManifest) return false;
+    try {
+        const manifest = runtime.getManifest();
+        return !!(manifest && manifest.background);
+    } catch(err){
+        return false;
+    }
 }
