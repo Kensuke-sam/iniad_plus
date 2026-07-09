@@ -38,6 +38,7 @@
 | Chrome Web Store 提出版 | — | **権限なし / background なし / 印刷ダイアログ保存** |
 | 追加ライブラリ | なし | なし |
 | 課題・出席まとめ | — | **講義ページのタブを「出席 / 未提出 / 提出済み」に自動分類して強調表示** |
+| Drive 資料検索 | — | **コース一覧に「ドライブで探す」ボタンを追加** |
 | その他の機能 | — | 本家と同一 |
 
 ---
@@ -50,7 +51,7 @@
 
 > Chrome Web Store 公開準備用の素材と提出メモは [`docs/chrome-web-store.md`](docs/chrome-web-store.md) にまとめています。
 
-> Chrome Web Store 向け ZIP は、審査で見える機能と掲載説明を一致させるため、PDF 作成補助と課題・出席まとめに必要な最小ファイルだけを含めています。リポジトリには、フォーク元由来のローカル利用向け補助機能も残っています。
+> Chrome Web Store 向け ZIP は、審査で見える機能と掲載説明を一致させるため、PDF 作成補助、課題・出席まとめ、Drive 資料検索に必要な最小ファイルだけを含めています。リポジトリには、フォーク元由来のローカル利用向け補助機能も残っています。
 
 ---
 
@@ -119,7 +120,7 @@ ZIP でインストールした場合は、最新版の ZIP を再ダウンロ�
 
 - ストア掲載文面、審査向け説明、単一目的の説明は [`docs/chrome-web-store.md`](docs/chrome-web-store.md)
 - プライバシー説明は [`docs/privacy.md`](docs/privacy.md)
-- 提出用 ZIP は `./scripts/package-webstore.sh` で作成。Chrome Web Store 向け ZIP には PDF 作成補助と課題・出席まとめに必要な最小ファイルだけを含め、拡張機能権限と background service worker は含めません
+- 提出用 ZIP は `./scripts/package-webstore.sh` で作成。Chrome Web Store 向け ZIP には PDF 作成補助、課題・出席まとめ、Drive 資料検索に必要な最小ファイルだけを含め、拡張機能権限と background service worker は含めません
 - スクリーンショット素材は `store-assets/` 配下
 
 提出用 ZIP の生成:

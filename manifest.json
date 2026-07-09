@@ -1,9 +1,9 @@
 {
     "name": "INIAD Plus - MOOCs PDF Helper",
     "short_name": "INIAD Plus",
-    "version": "1.4.5",
+    "version": "1.4.7",
     "manifest_version": 3,
-    "description": "INIAD MOOCs \u306e\u8a8d\u53ef\u6e08\u307f\u8b1b\u7fa9\u30b9\u30e9\u30a4\u30c9\u3092\u5b66\u7fd2\u7528 PDF \u3068\u3057\u3066\u4fdd\u5b58\u3057\u3084\u3059\u304f\u3059\u308b\u975e\u516c\u5f0f Chrome \u62e1\u5f35\u3067\u3059",
+    "description": "INIAD MOOCs \u306e\u8b1b\u7fa9\u30b9\u30e9\u30a4\u30c9\u306e\u5b66\u7fd2\u7528 PDF \u4f5c\u6210\u3001\u8ab2\u984c\u30fb\u51fa\u5e2d\u78ba\u8a8d\u3001Drive \u8cc7\u6599\u691c\u7d22\u3092\u88dc\u52a9\u3059\u308b\u975e\u516c\u5f0f Chrome \u62e1\u5f35\u3067\u3059",
     "homepage_url": "https://github.com/Kensuke-sam/iniad_plus",
     "permissions": [
         "storage"

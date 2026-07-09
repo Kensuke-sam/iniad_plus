@@ -43,7 +43,7 @@ manifest_path = stage / "manifest.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
 manifest["name"] = "INIAD Plus - MOOCs PDF Helper"
-manifest["description"] = "INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする非公式 Firefox 拡張です"
+manifest["description"] = "INIAD MOOCs の講義スライドの学習用 PDF 作成、課題・出席確認、Drive 資料検索を補助する非公式 Firefox 拡張です"
 manifest["permissions"] = [
     permission
     for permission in manifest.get("permissions", [])

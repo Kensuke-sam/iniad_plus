@@ -20,7 +20,7 @@ OUTPUT_ZIP="$DIST_DIR/iniad_plus-chrome-web-store-v${VERSION}.zip"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR" "$DIST_DIR"
 
-for path in manifest.json css/download-button.css css/moocs_assignment_tabs.css js/download-button.js js/download.js js/moocs_assignment_tabs.js lib/jquery-3.7.1.min.js LICENSE THIRD_PARTY_NOTICES.md; do
+for path in manifest.json css/download-button.css css/moocs_assignment_tabs.css js/download-button.js js/download.js js/moocs_assignment_tabs.js js/drive_buttons.js lib/jquery-3.7.1.min.js LICENSE THIRD_PARTY_NOTICES.md; do
   if [ ! -e "$path" ]; then
     echo "Missing required path: $path" >&2
     exit 1
@@ -54,7 +54,7 @@ for rel_path in icon_paths:
 
 manifest["name"] = "INIAD Plus - MOOCs PDF Helper"
 manifest["short_name"] = "INIAD Plus"
-manifest["description"] = "INIAD MOOCs の講義スライドの学習用 PDF 作成と、課題・出席ページの確認を補助する非公式 Chrome 拡張です"
+manifest["description"] = "INIAD MOOCs の講義スライドの学習用 PDF 作成、課題・出席確認、Drive 資料検索を補助する非公式 Chrome 拡張です"
 for key in ("permissions", "optional_permissions", "background"):
     manifest.pop(key, None)
 manifest["content_scripts"] = [
@@ -63,7 +63,8 @@ manifest["content_scripts"] = [
         "js": [
             "lib/jquery-3.7.1.min.js",
             "js/download-button.js",
-            "js/moocs_assignment_tabs.js"
+            "js/moocs_assignment_tabs.js",
+            "js/drive_buttons.js"
         ],
         "css": [
             "css/download-button.css",
