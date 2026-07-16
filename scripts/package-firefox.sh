@@ -30,6 +30,10 @@ done
 
 rm -f "$STAGE_DIR/js/service-worker.js"
 
+# manifest からもコードからも参照されないファイルは AMO 審査の指摘要因になるため同梱しない
+rm -rf "$STAGE_DIR/lib/fontawesome"
+rm -f "$STAGE_DIR/css/theme01.css"
+
 mkdir -p "$STAGE_DIR/img"
 python3 - "$ROOT_DIR" "$STAGE_DIR" <<'PY'
 import json
@@ -55,13 +59,21 @@ manifest.pop("optional_permissions", None)
 manifest["background"] = {
     "scripts": ["firefox/background.js"]
 }
+for content_script in manifest.get("content_scripts", []):
+    if "css" not in content_script:
+        continue
+    content_script["css"] = [
+        css_path
+        for css_path in content_script["css"]
+        if css_path != "css/theme01.css"
+    ]
 manifest["browser_specific_settings"] = {
     "gecko": {
         "id": "iniad-plus@kensuke-sam.github.io",
         "data_collection_permissions": {
             "required": ["none"]
         },
-        "strict_min_version": "121.0"
+        "strict_min_version": "140.0"
     }
 }
 

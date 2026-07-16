@@ -120,13 +120,14 @@ The Chrome Web Store package requests no extension permissions, has no backgroun
 ```text
 INIAD Plus - MOOCs PDF Helper has been updated for review clarity and minimum permissions.
 
-Changes in v1.4.7:
+Changes in v1.4.8:
 - The Chrome Web Store package now includes only the three features described in the listing: the print-ready PDF helper, the assignment/attendance summary for lecture pages, and the user-clicked Drive search shortcut.
 - The package requests no extension permissions.
 - debugger, downloads, storage, and the background service worker were removed from the Chrome Web Store package.
 - PDF saving is performed by the user through Chrome's print dialog.
 - The assignment/attendance summary fetches or hidden-loads only pages of the same lecture from moocs.iniad.org (same origin) with the user's existing session, parses them locally in the browser, and never transmits page content. Only derived status labels are cached temporarily in the browser's sessionStorage and never leave the device.
 - Submitted-state checks were made fresh per scan, and dynamically rendered upload status is inspected without requiring the user to open the lesson tab manually.
+- Assignment and attendance labels now wait for the rendered lesson state to settle before showing a color, preventing transient false not-submitted, submitted, or attendance indicators.
 - The Drive search shortcut opens Google Drive only after the user clicks the button, and the extension does not read or store Drive search results.
 - The listing and privacy policy now explicitly state that the extension does not bypass login restrictions, access controls, paywalls, or download restrictions. It only works with content the user is already authorized to view.
 - The extension does not transmit user data to the developer, does not use ads or tracking, and uses page content only to provide the three listed features to the user.
@@ -135,8 +136,8 @@ Changes in v1.4.7:
 ## 提出前チェック
 
 - `./scripts/package-webstore.sh` でクリーンな ZIP を作成する
-- `unzip -p dist/iniad_plus-chrome-web-store-v1.4.7.zip manifest.json` で `permissions`、`optional_permissions`、`background` が存在しないことを確認する
-- `unzip -l dist/iniad_plus-chrome-web-store-v1.4.7.zip` で掲載機能（PDF helper、課題・出席まとめ、Drive 資料検索）以外の JS/CSS と `js/service-worker.js` が入っていないことを確認する
+- `unzip -p dist/iniad_plus-chrome-web-store-v1.4.8.zip manifest.json` で `permissions`、`optional_permissions`、`background` が存在しないことを確認する
+- `unzip -l dist/iniad_plus-chrome-web-store-v1.4.8.zip` で掲載機能（PDF helper、課題・出席まとめ、Drive 資料検索）以外の JS/CSS と `js/service-worker.js` が入っていないことを確認する
 - スクリーンショットは `store-assets/chrome-web-store-screenshot-640x400.png` を使う
 - 小プロモーション タイルは `store-assets/chrome-web-store-small-promo-440x280.png` を使う
 - マーキー画像は `store-assets/chrome-web-store-marquee-1400x560.png` を使う
@@ -144,6 +145,6 @@ Changes in v1.4.7:
 - 「データの販売」「広告」「トラッキング」はすべて `いいえ`
 - 収集データは、実際の dashboard 分類に合わせて `ウェブサイトのコンテンツ` または同等項目を開示し、用途を学習用 PDF 作成補助、課題・出席まとめの表示、Drive 資料検索ボタンの作成に限定する
 
-## 今回の更新内容（v1.4.7）
+## 今回の更新内容（v1.4.8）
 
-`Chrome Web Store 向け ZIP を権限なし・background なしの構成に絞り、debugger/downloads/storage を提出版から外しました。機能は掲載どおり「印刷用 PDF 作成補助」「課題・出席まとめ（同一オリジンのページをブラウザ内でのみ解析。未表示タブの動的な提出済み表示も非表示フレームで確認）」「Drive 資料検索（クリック時のみ Google Drive 検索を開く）」の 3 つです。掲載文・プライバシー文・審査手順も、制限回避なし/ローカル処理/手動印刷保存に寄せました。`
+`課題・出席まとめの判定を安定化し、ページの描画が確定する前に「未提出」「提出済み」「出席」の色が一時表示される問題を修正しました。Chrome Web Store 向け ZIP は引き続き権限なし・background なしで、「印刷用 PDF 作成補助」「課題・出席まとめ」「Drive 資料検索」の 3 機能だけを含みます。`
