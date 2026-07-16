@@ -1,4 +1,7 @@
 $(function(){
+    // manifest の matches には ace.toyo.ac.jp も含まれるため、PDF 作成 UI は MOOCs だけに出す
+    if(window.location.hostname !== "moocs.iniad.org") return;
+
     const presentations = collectPresentationItems();
     if(!presentations.length) return;
 
@@ -43,17 +46,19 @@ function collectPresentationItems(){
 
     for(let i = 0; i < iframeSet.length; i++){
         const src = iframeSet[i].src;
-        if(!src || src.indexOf("docs.google.com/presentation/d/e/") === -1) continue;
+        if(!src) continue;
 
         let normalized = "";
         try {
+            // ページ由来の iframe src は部分文字列一致で信用せず、service worker と同じ基準で検証する
             const url = new URL(src, window.location.href);
+            if(!isAllowedPresentationUrl(url)) continue;
             url.searchParams.delete("download");
             url.searchParams.delete("iniadpp_download");
             url.searchParams.delete("iniadpp_job");
             normalized = url.toString();
         } catch(err){
-            normalized = src;
+            continue;
         }
 
         if(seen.has(normalized)) continue;
@@ -62,6 +67,12 @@ function collectPresentationItems(){
     }
 
     return items;
+}
+
+function isAllowedPresentationUrl(url){
+    return url.protocol === "https:"
+        && url.hostname === "docs.google.com"
+        && url.pathname.indexOf("/presentation/d/e/") === 0;
 }
 
 function getMountPoint(){
@@ -106,6 +117,16 @@ $(document).on("click", ".iniadpp-download-button", async function(){
                     type: "iniadpp:enqueue",
                     items: items
                 });
+                if(response && Array.isArray(response.unacceptedIndexes)){
+                    const unacceptedItems = getUnacceptedEnqueueItems(items, response.unacceptedIndexes);
+                    if(unacceptedItems.length){
+                        openManualSavePages(unacceptedItems);
+                    }
+                    if(response.ok || unacceptedItems.length){
+                        alert(buildManualSaveMessage(items.length));
+                        return;
+                    }
+                }
                 if(!response || !response.ok){
                     throw new Error(response && response.error ? response.error : "enqueue failed");
                 }
@@ -130,8 +151,22 @@ $(document).on("click", ".iniadpp-download-button", async function(){
 
 function openManualSavePages(items){
     for(let i = 0; i < items.length; i++){
-        window.open(createManualDownloadUrl(items[i].url), "_blank");
+        const manualUrl = createManualDownloadUrl(items[i].url);
+        if(!manualUrl) continue;
+        window.open(manualUrl, "_blank", "noopener");
     }
+}
+
+function getUnacceptedEnqueueItems(items, indexes){
+    const result = [];
+    const seen = new Set();
+    for(let i = 0; i < indexes.length; i++){
+        const index = indexes[i];
+        if(!Number.isInteger(index) || index < 0 || index >= items.length || seen.has(index)) continue;
+        seen.add(index);
+        result.push(items[index]);
+    }
+    return result;
 }
 
 function buildEnqueueMessage(count){
@@ -149,10 +184,11 @@ function buildManualSaveMessage(count){
 function createManualDownloadUrl(rawUrl){
     try {
         const url = new URL(rawUrl, window.location.href);
+        if(!isAllowedPresentationUrl(url)) return "";
         url.searchParams.set("download", "true");
         return url.toString();
     } catch(err){
-        return rawUrl;
+        return "";
     }
 }
 

@@ -6,6 +6,16 @@ const STORAGE_KEYS = {
 const AUTO_SAVE_PERMISSIONS = ["debugger", "downloads"];
 const ALLOWED_URL_HOST = "docs.google.com";
 const ALLOWED_URL_PATH_PREFIX = "/presentation/d/e/";
+const EXPECTED_DEBUGGER_DETACH_GUARD_MS = 2000;
+const RECOVERY_RETRY_BASE_MS = 250;
+const RECOVERY_RETRY_MAX_MS = 4000;
+
+let stateMutationTail = Promise.resolve();
+const expectedDebuggerDetachTabIds = new Set();
+const terminalExecutions = new Map();
+const pendingExportedJobs = new Map();
+let recoveryRetryTimer = null;
+let recoveryRetryAttempt = 0;
 
 chrome.runtime.onInstalled.addListener(function(){
     recoverState().catch(function(err){
@@ -32,8 +42,18 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
         return true;
     }
 
+    if(message.type === "iniadpp:pdf-job-context"){
+        handlePdfJobContext(sender && sender.tab)
+            .then(function(result){ sendResponse(result); })
+            .catch(function(err){
+                console.error("[INIAD Plus PDF] job context取得失敗:", err);
+                sendResponse({ ok: false, error: err && err.message ? err.message : String(err) });
+            });
+        return true;
+    }
+
     if(message.type === "iniadpp:pdf-ready"){
-        handlePdfReady(sender.tab, message)
+        handlePdfReady(sender && sender.tab, message)
             .then(function(result){ sendResponse(result); })
             .catch(function(err){
                 console.error("[INIAD Plus PDF] pdf-ready失敗:", err);
@@ -43,7 +63,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse){
     }
 
     if(message.type === "iniadpp:pdf-failed"){
-        handlePdfFailed(sender.tab, message)
+        handlePdfFailed(sender && sender.tab, message)
             .then(function(result){ sendResponse(result); })
             .catch(function(err){
                 console.error("[INIAD Plus PDF] pdf-failed失敗:", err);
@@ -79,112 +99,358 @@ async function handleEnqueue(items){
         return Object.assign({}, item, { autoSave: autoSave });
     });
 
-    const state = await getState();
-    state.queue = state.queue.concat(queueItems);
-    await setState(state);
-    await processQueue();
+    let deferred = false;
+    await withStateMutationLock(async function(){
+        const state = await getState();
+        state.queue = state.queue.concat(queueItems);
+        // ここが成功した時点で受付は完了。以降の開始失敗で受付結果を失敗に戻さない。
+        await setState(state);
+        try {
+            await processQueueUnlocked();
+        } catch(err){
+            deferred = true;
+            console.warn("[INIAD Plus PDF] キュー開始を延期します:", err);
+            scheduleRecoveryRetry();
+        }
+    });
 
-    return {
+    const result = {
         ok: true,
         queued: normalizedItems.length,
         manualSave: !autoSave
     };
+    if(deferred){
+        result.deferred = true;
+    }
+    return result;
 }
 
 async function handlePdfReady(tab, message){
-    if(!tab || typeof tab.id !== "number"){
-        return { ok: false, error: "missing-tab" };
-    }
+    const reservation = await reserveTerminalForMessage(tab, message, true);
+    return executeTerminalReservation(reservation, function(active){
+        return runPdfReadyExport(tab, message, active);
+    });
+}
 
-    const state = await getState();
-    if(!state.active || state.active.tabId !== tab.id){
-        return { ok: false, error: "inactive-tab" };
-    }
-
-    const baseHint = stripExtension(message.filename || state.active.filenameHint || "slides");
+async function runPdfReadyExport(tab, message, active){
+    const baseHint = stripExtension(message.filename || active.filenameHint || "slides");
     const filename = sanitizeFilename(baseHint, ".pdf");
+    const terminalKey = createTerminalExecutionKey(active);
 
-    if(state.active.autoSave === false){
+    if(active.phase === "exported" || pendingExportedJobs.has(terminalKey)){
+        const finalization = await finalizeSavedExport(active);
+        return addCleanupPending(
+            { ok: true, saved: true, filename: filename },
+            finalization
+        );
+    }
+
+    if(active.autoSave === false){
         await focusTab(tab.id);
-        await cleanupActiveJob(tab.id, false);
-        await processQueue();
-        return { ok: false, error: "manual-save-required" };
+        const finalization = await finishActiveJobAndContinue(active, false);
+        return addCleanupPending(
+            { ok: false, error: "manual-save-required" },
+            finalization
+        );
     }
 
     try {
         await processExportFromTab(tab.id, filename);
-        await cleanupActiveJob(tab.id, true);
-        await processQueue();
-        return { ok: true, filename: filename };
     } catch(err){
         console.error("[INIAD Plus PDF] エクスポート処理失敗:", err);
         await focusTab(tab.id);
-        await cleanupActiveJob(tab.id, false);
-        await processQueue();
-        return { ok: false, error: err && err.message ? err.message : String(err) };
+        const finalization = await finishActiveJobAndContinue(active, false);
+        return addCleanupPending(
+            { ok: false, error: err && err.message ? err.message : String(err) },
+            finalization
+        );
     }
+
+    const finalization = await finalizeSavedExport(active);
+    return addCleanupPending(
+        { ok: true, saved: true, filename: filename },
+        finalization
+    );
+}
+
+function addCleanupPending(result, finalization){
+    if(finalization && finalization.cleanupPending){
+        result.cleanupPending = true;
+    }
+    return result;
+}
+
+async function handlePdfJobContext(tab){
+    if(!tab || typeof tab.id !== "number"){
+        return { ok: false, error: "missing-tab" };
+    }
+
+    return withStateMutationLock(async function(){
+        const state = await getState();
+        if(!state.active || state.active.tabId !== tab.id){
+            return { ok: false, error: "inactive-tab" };
+        }
+        if(typeof state.active.jobId !== "string" || !state.active.jobId){
+            return { ok: false, error: "inactive-job" };
+        }
+        return {
+            ok: true,
+            jobId: state.active.jobId,
+            deckMatches: hasSameDeckPath(tab.url, state.active.url)
+        };
+    });
 }
 
 async function handlePdfFailed(tab, message){
-    const state = await getState();
-    if(tab && state.active && state.active.tabId === tab.id){
+    const reservation = await reserveTerminalForMessage(tab, message, false);
+    return executeTerminalReservation(reservation, async function(active){
+        if(!hasSameDeckPath(tab.url, active.url)){
+            console.warn("[INIAD Plus PDF] PDF生成タブが対象スライドから移動したため、ジョブを終了します");
+        }
         console.error("[INIAD Plus PDF] PDF生成失敗:", message && message.message ? message.message : "unknown error");
-        await focusTab(tab.id);
-        await cleanupActiveJob(tab.id, false);
-        await processQueue();
+        await focusTab(active.tabId);
+        const finalization = await finishActiveJobAndContinue(active, false);
+        return addCleanupPending(
+            {
+                ok: false,
+                error: finalization.completed ? "pdf-generation-failed" : "inactive-job"
+            },
+            finalization
+        );
+    });
+}
+
+async function reserveTerminalForMessage(tab, message, requireDeckMatch){
+    if(!tab || typeof tab.id !== "number"){
+        return { result: { ok: false, error: "missing-tab" } };
     }
-    return { ok: true };
+
+    return reserveActiveTerminal(tab.id, function(active){
+        if(!message || typeof message.jobId !== "string" || message.jobId !== active.jobId){
+            return { ok: false, error: "job-mismatch" };
+        }
+        if(requireDeckMatch && !hasSameDeckPath(tab.url, active.url)){
+            return { ok: false, error: "wrong-deck" };
+        }
+        return null;
+    });
+}
+
+async function reserveActiveTerminal(tabId, validateActive){
+    return withStateMutationLock(async function(){
+        const state = await getState();
+        if(!state.active || state.active.tabId !== tabId){
+            return { result: { ok: false, error: "inactive-tab" } };
+        }
+
+        if(typeof validateActive === "function"){
+            const validationError = validateActive(state.active);
+            if(validationError){
+                return { result: validationError };
+            }
+        }
+
+        const key = createTerminalExecutionKey(state.active);
+        const existing = terminalExecutions.get(key);
+        if(existing){
+            return { active: state.active, entry: existing, key: key, owner: false };
+        }
+
+        const entry = createDeferredExecution();
+        terminalExecutions.set(key, entry);
+        return {
+            active: state.active,
+            entry: entry,
+            key: key,
+            owner: true
+        };
+    });
+}
+
+async function executeTerminalReservation(reservation, task){
+    if(reservation.result){
+        return reservation.result;
+    }
+    if(!reservation.owner){
+        return reservation.entry.promise;
+    }
+
+    reservation.entry.start(function(){
+        return task(reservation.active);
+    });
+
+    try {
+        return await reservation.entry.promise;
+    } finally {
+        if(terminalExecutions.get(reservation.key) === reservation.entry){
+            terminalExecutions.delete(reservation.key);
+        }
+    }
+}
+
+function createTerminalExecutionKey(active){
+    return String(active.tabId) + ":" + String(active.jobId || "unknown-job");
+}
+
+function createDeferredExecution(){
+    let resolveExecution;
+    let rejectExecution;
+    let started = false;
+    const promise = new Promise(function(resolve, reject){
+        resolveExecution = resolve;
+        rejectExecution = reject;
+    });
+
+    return {
+        promise: promise,
+        start: function(task){
+            if(started) return;
+            started = true;
+            Promise.resolve()
+                .then(task)
+                .then(resolveExecution, rejectExecution);
+        }
+    };
 }
 
 async function handleTabRemoved(tabId){
-    const state = await getState();
-    if(!state.active || state.active.tabId !== tabId) return;
-    await clearActive();
-    await processQueue();
+    return handleActiveTerminalLoss(tabId);
 }
 
 async function handleDebuggerDetach(source, reason){
     if(!source || typeof source.tabId !== "number") return;
+    if(expectedDebuggerDetachTabIds.delete(source.tabId)){
+        return { ok: true, expected: true };
+    }
+    return handleActiveTerminalLoss(source.tabId, reason);
+}
 
-    const state = await getState();
-    if(!state.active || state.active.tabId !== source.tabId) return;
-    if(reason === "target_closed") return;
-
-    await cleanupActiveJob(source.tabId, false);
-    await processQueue();
+async function handleActiveTerminalLoss(tabId, reason){
+    const reservation = await reserveActiveTerminal(tabId);
+    return executeTerminalReservation(reservation, async function(active){
+        const finalization = await finishActiveJobAndContinue(active, false);
+        return addCleanupPending({
+            ok: false,
+            error: "job-aborted",
+            advanced: finalization.completed,
+            reason: reason || "tab-removed"
+        }, finalization);
+    });
 }
 
 async function processQueue(){
+    return withStateMutationLock(processQueueUnlocked);
+}
+
+async function processQueueUnlocked(){
     const state = await getState();
     if(state.active || !state.queue.length) return;
 
-    const nextJob = state.queue.shift();
+    const nextJob = state.queue[0];
     const tab = await chrome.tabs.create({
         url: buildDownloadUrl(nextJob.url, nextJob.jobId),
         active: nextJob.autoSave === false
     });
 
-    state.active = {
-        jobId: nextJob.jobId,
-        url: nextJob.url,
-        filenameHint: nextJob.filenameHint,
-        autoSave: nextJob.autoSave !== false,
-        tabId: tab.id
+    const nextState = {
+        queue: state.queue.slice(1),
+        active: {
+            jobId: nextJob.jobId,
+            url: nextJob.url,
+            filenameHint: nextJob.filenameHint,
+            autoSave: nextJob.autoSave !== false,
+            phase: "rendering",
+            tabId: tab.id
+        }
     };
 
-    await setState(state);
+    try {
+        await setState(nextState);
+    } catch(err){
+        try {
+            await chrome.tabs.remove(tab.id);
+        } catch(closeErr){
+            console.warn("[INIAD Plus PDF] 状態保存失敗後のタブ close 失敗:", closeErr);
+        }
+        throw err;
+    }
 }
 
 async function recoverState(){
-    const state = await getState();
-    if(!state.active) return;
-
     try {
-        await chrome.tabs.get(state.active.tabId);
+        await runRecoveryPass();
+        recoveryRetryAttempt = 0;
     } catch(err){
-        await clearActive();
-        await processQueue();
+        scheduleRecoveryRetry();
+        throw err;
     }
+}
+
+async function runRecoveryPass(){
+    const pendingComplete = await flushPendingExportedJobs();
+    if(!pendingComplete){
+        throw new Error("exported-job-finalization-pending");
+    }
+
+    const state = await getState();
+    if(!state.active){
+        if(state.queue.length){
+            await processQueue();
+        }
+        return;
+    }
+
+    if(state.active.phase === "exported"){
+        const key = rememberExportedJob(state.active);
+        const finalization = await attemptFinalizeExportedJob(key);
+        if(finalization.cleanupPending){
+            throw new Error("exported-job-finalization-pending");
+        }
+        return;
+    }
+
+    let activeTab;
+    try {
+        activeTab = await chrome.tabs.get(state.active.tabId);
+    } catch(err){
+        const result = await handleActiveTerminalLoss(state.active.tabId, "recovery-missing-tab");
+        if(result && result.cleanupPending){
+            throw new Error("missing-tab-finalization-pending");
+        }
+        return;
+    }
+
+    const activeTabUrl = activeTab && typeof activeTab.url === "string"
+        ? activeTab.url
+        : "";
+    if(activeTabUrl && !hasSameDeckPath(activeTabUrl, state.active.url)){
+        const result = await handleActiveTerminalLoss(state.active.tabId, "recovery-wrong-deck");
+        if(result && result.cleanupPending){
+            throw new Error("wrong-deck-finalization-pending");
+        }
+    }
+}
+
+function scheduleRecoveryRetry(){
+    if(recoveryRetryTimer !== null) return false;
+
+    const delay = Math.min(
+        RECOVERY_RETRY_BASE_MS * Math.pow(2, Math.min(recoveryRetryAttempt, 8)),
+        RECOVERY_RETRY_MAX_MS
+    );
+    recoveryRetryTimer = setTimeout(function(){
+        recoveryRetryTimer = null;
+        runRecoveryPass()
+            .then(function(){
+                recoveryRetryAttempt = 0;
+            })
+            .catch(function(err){
+                recoveryRetryAttempt++;
+                console.warn("[INIAD Plus PDF] 復旧を再試行します:", err);
+                scheduleRecoveryRetry();
+            });
+    }, delay);
+    return true;
 }
 
 async function processExportFromTab(tabId, filename){
@@ -203,9 +469,14 @@ async function processExportFromTab(tabId, filename){
         await exportAsPdf(debuggee, filename);
     } finally {
         if(attached){
+            expectedDebuggerDetachTabIds.add(tabId);
             try {
                 await chrome.debugger.detach(debuggee);
+                setTimeout(function(){
+                    expectedDebuggerDetachTabIds.delete(tabId);
+                }, EXPECTED_DEBUGGER_DETACH_GUARD_MS);
             } catch(err){
+                expectedDebuggerDetachTabIds.delete(tabId);
                 console.warn("[INIAD Plus PDF] debugger detach失敗:", err);
             }
         }
@@ -262,7 +533,109 @@ async function exportAsPdf(debuggee, filename){
     });
 }
 
-async function cleanupActiveJob(tabId, shouldCloseTab){
+async function finalizeSavedExport(active){
+    const key = rememberExportedJob(active);
+    const finalization = await attemptFinalizeExportedJob(key);
+    if(finalization.cleanupPending){
+        scheduleRecoveryRetry();
+    }
+    return finalization;
+}
+
+function rememberExportedJob(active){
+    const key = createTerminalExecutionKey(active);
+    if(!pendingExportedJobs.has(key)){
+        pendingExportedJobs.set(key, Object.assign({}, active));
+    }
+    return key;
+}
+
+async function flushPendingExportedJobs(){
+    let complete = true;
+    const keys = Array.from(pendingExportedJobs.keys());
+    for(const key of keys){
+        const finalization = await attemptFinalizeExportedJob(key);
+        if(finalization.cleanupPending){
+            complete = false;
+        }
+    }
+    return complete;
+}
+
+async function attemptFinalizeExportedJob(key){
+    const active = pendingExportedJobs.get(key);
+    if(!active){
+        return { completed: true, cleanupPending: false };
+    }
+
+    let marked;
+    try {
+        marked = await markActiveExported(active.tabId, active.jobId);
+    } catch(err){
+        console.warn("[INIAD Plus PDF] 保存済み状態の記録を延期します:", err);
+        scheduleRecoveryRetry();
+        return { completed: false, cleanupPending: true };
+    }
+
+    if(!marked){
+        pendingExportedJobs.delete(key);
+        return { completed: true, cleanupPending: false };
+    }
+
+    const finalization = await finishActiveJobAndContinue(active, true);
+    if(finalization.completed){
+        pendingExportedJobs.delete(key);
+    }
+    return finalization;
+}
+
+async function markActiveExported(tabId, jobId){
+    return withStateMutationLock(async function(){
+        const state = await getState();
+        if(!state.active || state.active.tabId !== tabId || state.active.jobId !== jobId){
+            return false;
+        }
+        if(state.active.phase === "exported"){
+            return true;
+        }
+
+        const exportedActive = Object.assign({}, state.active, { phase: "exported" });
+        await chrome.storage.local.set({
+            [STORAGE_KEYS.active]: exportedActive
+        });
+        return true;
+    });
+}
+
+async function finishActiveJobAndContinue(active, shouldCloseTab){
+    let cleared;
+    try {
+        cleared = await cleanupActiveJob(active.tabId, active.jobId, shouldCloseTab);
+    } catch(err){
+        console.warn("[INIAD Plus PDF] active解除を延期します:", err);
+        scheduleRecoveryRetry();
+        return { completed: false, cleanupPending: true };
+    }
+
+    if(!cleared){
+        // すでに同じジョブがactiveでなければ、このジョブの後処理は完了済み。
+        return { completed: true, cleanupPending: false };
+    }
+
+    try {
+        await processQueue();
+        return { completed: true, cleanupPending: false };
+    } catch(err){
+        console.warn("[INIAD Plus PDF] 次のキュー開始を延期します:", err);
+        scheduleRecoveryRetry();
+        return { completed: true, cleanupPending: true };
+    }
+}
+
+async function cleanupActiveJob(tabId, jobId, shouldCloseTab){
+    const cleared = await clearActiveIfMatches(tabId, jobId);
+    if(!cleared) return false;
+
     if(shouldCloseTab){
         try {
             await chrome.tabs.remove(tabId);
@@ -270,7 +643,7 @@ async function cleanupActiveJob(tabId, shouldCloseTab){
             console.warn("[INIAD Plus PDF] タブ close 失敗:", err);
         }
     }
-    await clearActive();
+    return true;
 }
 
 async function focusTab(tabId){
@@ -306,6 +679,25 @@ function isAllowedUrl(rawUrl){
     } catch(err){
         return false;
     }
+}
+
+function hasSameDeckPath(tabUrl, activeUrl){
+    try {
+        const tabDeck = new URL(tabUrl);
+        const activeDeck = new URL(activeUrl);
+        if(tabDeck.protocol !== "https:" || activeDeck.protocol !== "https:") return false;
+        if(tabDeck.hostname !== ALLOWED_URL_HOST || activeDeck.hostname !== ALLOWED_URL_HOST) return false;
+        if(tabDeck.pathname.indexOf(ALLOWED_URL_PATH_PREFIX) !== 0) return false;
+        if(activeDeck.pathname.indexOf(ALLOWED_URL_PATH_PREFIX) !== 0) return false;
+        return normalizeDeckPath(tabDeck.pathname) === normalizeDeckPath(activeDeck.pathname);
+    } catch(err){
+        return false;
+    }
+}
+
+function normalizeDeckPath(pathname){
+    const normalized = String(pathname || "").replace(/\/+$/, "");
+    return normalized || "/";
 }
 
 function buildDownloadUrl(rawUrl, jobId){
@@ -351,8 +743,26 @@ async function setState(state){
     });
 }
 
-async function clearActive(){
+async function clearActiveIfMatches(tabId, jobId){
+    return withStateMutationLock(function(){
+        return clearActiveIfMatchesUnlocked(tabId, jobId);
+    });
+}
+
+async function clearActiveIfMatchesUnlocked(tabId, jobId){
+    const state = await getState();
+    if(!state.active || state.active.tabId !== tabId || state.active.jobId !== jobId) return false;
+
     await chrome.storage.local.set({
         [STORAGE_KEYS.active]: null
     });
+    return true;
+}
+
+function withStateMutationLock(task){
+    const operation = stateMutationTail.then(task, task);
+    stateMutationTail = operation.catch(function(){
+        // 後続の状態変更は、直前の失敗に巻き込まず必ず実行できるようにする。
+    });
+    return operation;
 }
