@@ -28,19 +28,29 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 2 -nodes 
   headless (new) で拡張が動く。
 - content script はエラー時に alert() を出すことがある。`page.on('dialog')` で必ず dismiss する。
 - 課題・出席まとめの検証には [driver.js](driver.js) を使う (このディレクトリに同梱)。
-  フィクスチャ 6 ページ構成: 対象外 / 静的提出済み / 未提出 / 遅延描画アップロード済み(2.5s後に注入
-  → 暫定「未提出」からの後追い補正を検証) / 出席 / 対象外。
+  フィクスチャ 10 ページ構成: 現在ページの遅延「問題を開く」 / 静的提出済み / 未提出 / 遅延描画アップロード済み
+  (2.5s後に注入 → 確定前に「未提出」を点滅させないことを検証) / 出席 / 対象外 / 「問題を開く」が残る途中保存 /
+  提出済み・未提出が混在する複数ファイル欄 / 静的HTMLはアップロード済みのみで、2.5s後に
+  「問題を開く」がDOM挿入されるページ / 静的HTMLは出席だが2.5s後に対象外へ変わるページ。
   シナリオ: 初回表示 → sessionStorage ウォームリロード即時表示 → 提出反映(更新ボタン) →
-  focus 連打スロットル(遅延実行) → 更新ボタン連打。
+  focus連打の集約 → 更新ボタン連打の重複排除 → 操作起点の追走更新 →
+  部分失敗時の前回結果保持 / 前回結果なし表示。
 - ダッシュボードの状態は `.pagination li[data-iniadpp-assignment-state]` と
   `[data-count="..."]` から読み取れる。
 
 ## 実行
 
 ```bash
-node driver.js            # 17 チェック、~50 秒。exit 0 = ALL PASS
+node driver.js            # 43 チェック、~90 秒。exit 0 = ALL PASS
 HEADFUL=1 node driver.js  # 画面を見ながら
+
+node pdf-navigation-regression.js
+node assignment-status-regression.test.js
+node firefox-background-job-context.test.js
+node service-worker-pdf-ready-dedupe.test.js
 ```
+
+証明書・スクリーンショットをリポジトリ外へ置く場合は、`TLS_DIR` と `ARTIFACT_DIR` を指定できる。
 
 スライド PDF 系の確認は公開デッキ URL (INIAD アカウント不要) が使える:
 `https://docs.google.com/presentation/d/e/2PACX-…/pub?…&iniadpp_download=1`

@@ -18,8 +18,9 @@ const iniadppAssignmentStateClasses = [
 const iniadppLessonClassificationCache = {};
 const iniadppLessonClassificationGeneration = {};
 let iniadppAssignmentScanVersion = 0;
-const iniadppAssignmentStateStorageKey = "iniadppAssignmentStates";
+const iniadppAssignmentStateStorageKey = "iniadppAssignmentStates:v4";
 const iniadppAssignmentStateCacheTtlMs = 30 * 60 * 1000;
+const iniadppLessonFetchTimeoutMs = 15 * 1000;
 const iniadppRenderedInspectionQuietMs = 1200;
 const iniadppRenderedInspectionDebounceMs = 150;
 const iniadppRenderedInspectionMaxWaitMs = 4500;
@@ -28,14 +29,23 @@ const iniadppRenderedInspectionMaxConcurrent = 3;
 let iniadppRenderedInspectionActiveCount = 0;
 const iniadppRenderedInspectionQueue = [];
 let iniadppAssignmentAutoRefreshTimer = null;
-let iniadppAssignmentAutoRefreshDueAt = 0;
+let iniadppAssignmentAutoRefreshNeedsTrailingScan = false;
+let iniadppAssignmentForcedRefreshPromise = null;
+let iniadppAssignmentTrailingForcedRefreshRequested = false;
 const iniadppAutoRefreshMinIntervalMs = 10 * 1000;
 let iniadppLastForcedScanAt = 0;
 let iniadppCurrentLessonSettled = false;
+let iniadppCurrentLessonWatcherStop = null;
+let iniadppCurrentLessonRemoteScanVersion = 0;
 
 function markMoocsAssignmentTabs(forceReload){
+    // 初期表示の800ms再走査を含め、強制更新中に別世代の走査を始めて結果を無効化しない
+    if(iniadppAssignmentForcedRefreshPromise !== null){
+        return iniadppAssignmentForcedRefreshPromise;
+    }
+
     const tabItems = collectMoocsLessonTabs();
-    if(!tabItems.length) return;
+    if(!tabItems.length) return Promise.resolve({ failures: [] });
 
     // 強制再読込のときだけ破棄する。無条件に消すと初期表示の二重スキャンで確認中の結果まで捨ててしまう
     if(forceReload === true){
@@ -48,33 +58,127 @@ function markMoocsAssignmentTabs(forceReload){
 
     tabItems.forEach(function(item){
         // 前回の判定結果があれば先に表示し、再確認のたびに「確認中」へ戻さない
-        updateMoocsLessonTabState(item, readCachedMoocsAssignmentState(item.url) || "pending");
+        const cachedState = readCachedMoocsAssignmentState(item.url);
+        const renderedState = getReusableMoocsAssignmentState(item.$li.attr("data-iniadpp-assignment-state"));
+        const previousState = cachedState || renderedState;
+        item.hadPreviousState = !!previousState;
+        updateMoocsLessonTabState(item, previousState || "pending");
     });
 
-    tabItems.forEach(function(item){
-        classifyMoocsLessonTab(item.url, forceReload === true)
+    if(forceReload === true){
+        setMoocsAssignmentRefreshState("loading", {
+            hasPreviousState: tabItems.some(function(item){ return item.hadPreviousState === true; })
+        });
+    }
+
+    const inspections = tabItems.map(function(item){
+        return classifyMoocsLessonTab(item.url, forceReload === true)
             .then(function(kind){
-                if(scanVersion !== iniadppAssignmentScanVersion) return;
+                if(scanVersion !== iniadppAssignmentScanVersion){
+                    return { ok: true, stale: true };
+                }
                 const state = kind || "none";
+                const isWaitingForCurrentPageRendering = forceReload !== true &&
+                    isCurrentMoocsLessonUrl(item.url) &&
+                    !iniadppCurrentLessonSettled &&
+                    (state === "attendance" ||
+                        state === "submitted" ||
+                        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document)));
+                if(isWaitingForCurrentPageRendering){
+                    // 現在ページは遅延描画で提出状態が変わることがある。
+                    // 明示的な未提出状態でない色付き判定は、watcher の最終確認まで前回結果または「確認中」を維持する。
+                    return { ok: true, pendingRenderedVerification: true };
+                }
                 // 現在ページは動的描画が終わる前の判定を保存すると誤りが固定されるため、描画静止後の watcher に任せる
-                if(!isCurrentMoocsLessonUrl(item.url) || iniadppCurrentLessonSettled){
+                if(forceReload === true || !isCurrentMoocsLessonUrl(item.url) || iniadppCurrentLessonSettled){
                     writeCachedMoocsAssignmentState(item.url, state);
                 }
                 updateMoocsLessonTabState(item, state);
                 updateMoocsAssignmentDashboard();
+                return { ok: true };
             })
             .catch(function(error){
-                if(scanVersion !== iniadppAssignmentScanVersion) return;
+                if(scanVersion !== iniadppAssignmentScanVersion){
+                    return { ok: false, stale: true, hadPreviousState: item.hadPreviousState };
+                }
                 if(!item.state || item.state === "pending"){
                     // 前回の結果を表示中なら、通信失敗で「未確認」へ戻さない
                     updateMoocsLessonTabState(item, "unknown");
                 }
                 updateMoocsAssignmentDashboard();
                 console.warn("[INIAD Plus] Failed to inspect lesson tab:", item.url, error);
+                return { ok: false, hadPreviousState: item.hadPreviousState };
             });
     });
 
     updateMoocsAssignmentDashboard();
+
+    const scanPromise = Promise.all(inspections).then(function(results){
+        return {
+            failures: results.filter(function(result){
+                return result && result.ok === false && result.stale !== true;
+            })
+        };
+    });
+
+    if(forceReload !== true){
+        return scanPromise;
+    }
+
+    const refreshResultPromise = scanPromise.then(function(summary){
+        if(summary.failures.length){
+            const allHavePreviousState = summary.failures.every(function(failure){
+                return failure.hadPreviousState === true;
+            });
+            setMoocsAssignmentRefreshState("error", {
+                allHavePreviousState: allHavePreviousState
+            });
+        } else {
+            setMoocsAssignmentRefreshState("success");
+        }
+        return summary;
+    }, function(error){
+        console.warn("[INIAD Plus] Failed to refresh assignment dashboard:", error);
+        const allHavePreviousState = tabItems.every(function(item){
+            return item.hadPreviousState === true;
+        });
+        setMoocsAssignmentRefreshState("error", { allHavePreviousState: allHavePreviousState });
+        return { failures: [{ hadPreviousState: allHavePreviousState }] };
+    });
+
+    iniadppAssignmentForcedRefreshPromise = refreshResultPromise.then(function(summary){
+        finishMoocsForcedRefresh();
+        return summary;
+    }, function(error){
+        // 表示更新側で例外が起きても in-flight ロックを残さず、次の再読込を可能にする。
+        console.warn("[INIAD Plus] Assignment refresh completion failed:", error);
+        try {
+            setMoocsAssignmentRefreshState("error", {
+                allHavePreviousState: tabItems.every(function(item){ return item.hadPreviousState === true; })
+            });
+        } catch(ignoredError){
+            // UI自体が壊れていてもロック解放は続行する
+        }
+        finishMoocsForcedRefresh();
+        return { failures: [{ hadPreviousState: false, error: error }] };
+    });
+
+    return iniadppAssignmentForcedRefreshPromise;
+}
+
+function finishMoocsForcedRefresh(){
+    const needsTrailingScan = iniadppAssignmentTrailingForcedRefreshRequested;
+    iniadppAssignmentTrailingForcedRefreshRequested = false;
+    iniadppAssignmentForcedRefreshPromise = null;
+
+    if(needsTrailingScan){
+        // 完了ハンドラ内で同じPromiseを再取得しないよう、次のtaskで1回だけ追走する。
+        window.setTimeout(function(){
+            if(iniadppAssignmentForcedRefreshPromise === null){
+                markMoocsAssignmentTabs(true);
+            }
+        }, 0);
+    }
 }
 
 function clearMoocsLessonClassificationCache(){
@@ -141,28 +245,43 @@ function applyMoocsLateAssignmentClassification(url, generation, kind){
     }
 }
 
-function scheduleMoocsAssignmentAutoRefresh(delayMs){
+function getReusableMoocsAssignmentState(state){
+    if(typeof state !== "string") return "";
+    return ["attendance", "submit", "submitted", "none"].indexOf(state) !== -1 ? state : "";
+}
+
+function scheduleMoocsAssignmentAutoRefresh(delayMs, options){
+    const needsTrailingScan = !!(options && options.ensureTrailingScan);
+    iniadppAssignmentAutoRefreshNeedsTrailingScan =
+        iniadppAssignmentAutoRefreshNeedsTrailingScan || needsTrailingScan;
+
     if(iniadppAssignmentAutoRefreshTimer !== null){
         window.clearTimeout(iniadppAssignmentAutoRefreshTimer);
     }
 
-    iniadppAssignmentAutoRefreshDueAt = Date.now() + delayMs;
     iniadppAssignmentAutoRefreshTimer = window.setTimeout(function(){
         iniadppAssignmentAutoRefreshTimer = null;
+        const shouldEnsureTrailingScan = iniadppAssignmentAutoRefreshNeedsTrailingScan;
+        iniadppAssignmentAutoRefreshNeedsTrailingScan = false;
+        if(iniadppAssignmentForcedRefreshPromise !== null){
+            if(shouldEnsureTrailingScan){
+                iniadppAssignmentTrailingForcedRefreshRequested = true;
+            }
+            return;
+        }
         markMoocsAssignmentTabs(true);
     }, delayMs);
 }
 
 function scheduleMoocsAssignmentAutoRefreshIfStale(delayMs){
+    // focus / visibilitychange は受動的な再確認なので、提出起点などの既存予約を前倒し・後ろ倒ししない
+    if(iniadppAssignmentAutoRefreshTimer !== null) return;
+
     // ウィンドウ切替のたびに全タブを再取得するとサーバー負荷と枠の奪い合いで反映がむしろ遅くなるため間隔を空ける。
     // ただし破棄すると別タブでの提出が反映されないままになるため、間隔明けまで遅延して1回だけ実行する
     const sinceForcedMs = Date.now() - iniadppLastForcedScanAt;
     if(sinceForcedMs < iniadppAutoRefreshMinIntervalMs){
         const deferredDelayMs = Math.max(delayMs, iniadppAutoRefreshMinIntervalMs - sinceForcedMs);
-        // フォーム提出起点など、先に予約済みのより早い再確認を後ろへ延ばさない
-        if(iniadppAssignmentAutoRefreshTimer !== null && iniadppAssignmentAutoRefreshDueAt <= Date.now() + deferredDelayMs){
-            return;
-        }
         scheduleMoocsAssignmentAutoRefresh(deferredDelayMs);
         return;
     }
@@ -170,14 +289,27 @@ function scheduleMoocsAssignmentAutoRefreshIfStale(delayMs){
 }
 
 function watchCurrentMoocsLessonRendering(){
-    // 現在ページは iframe 検査を通らないため、動的描画の完了を自前で監視して判定を確定させる
+    // 提出操作のたびに監視を張り直し、遅れて変わる現在ページの状態も取りこぼさない
+    if(typeof iniadppCurrentLessonWatcherStop === "function"){
+        iniadppCurrentLessonWatcherStop();
+    }
+
     const url = normalizeMoocsUrl(window.location.href);
+    const remoteScanVersion = iniadppCurrentLessonRemoteScanVersion;
     let observer = null;
     let quietTimerId = null;
     let capTimerId = null;
+    let stopped = false;
+
+    iniadppCurrentLessonSettled = false;
+
+    function isStale(){
+        return remoteScanVersion !== iniadppCurrentLessonRemoteScanVersion;
+    }
 
     function stop(){
-        iniadppCurrentLessonSettled = true;
+        if(stopped) return;
+        stopped = true;
         if(observer){
             observer.disconnect();
             observer = null;
@@ -190,26 +322,50 @@ function watchCurrentMoocsLessonRendering(){
             window.clearTimeout(capTimerId);
             capTimerId = null;
         }
+        if(iniadppCurrentLessonWatcherStop === stop){
+            iniadppCurrentLessonWatcherStop = null;
+            iniadppCurrentLessonSettled = true;
+        }
     }
 
+    iniadppCurrentLessonWatcherStop = stop;
+
     function scheduleQuietRecheck(){
-        if(iniadppCurrentLessonSettled) return;
+        if(stopped) return;
+        if(isStale()){
+            stop();
+            return;
+        }
         if(quietTimerId !== null) window.clearTimeout(quietTimerId);
         quietTimerId = window.setTimeout(function(){
             quietTimerId = null;
+            if(isStale()){
+                stop();
+                return;
+            }
             applyCurrentMoocsLessonState(url, false);
         }, iniadppRenderedInspectionQuietMs);
     }
 
     try {
         observer = new MutationObserver(scheduleQuietRecheck);
-        observer.observe(document, { childList: true, subtree: true, characterData: true });
+        observer.observe(document, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden", "disabled", "aria-disabled"]
+        });
     } catch(error){
         observer = null;
     }
 
     capTimerId = window.setTimeout(function(){
         capTimerId = null;
+        if(isStale()){
+            stop();
+            return;
+        }
         applyCurrentMoocsLessonState(url, true);
         stop();
     }, iniadppRenderedInspectionMaxWaitMs);
@@ -218,11 +374,25 @@ function watchCurrentMoocsLessonRendering(){
 }
 
 function applyCurrentMoocsLessonState(url, isFinal){
-    const kind = classifyMoocsLessonDocument(document);
+    let kind = "";
+    try {
+        kind = classifyMoocsLessonDocument(document);
+    } catch(error){
+        console.warn("[INIAD Plus] Failed to inspect current lesson rendering:", error);
+        return false;
+    }
     const state = kind || "none";
-    // 描画途中の静止点での中間判定は、遅れて描画される提出済み表示を取り違えて格下げしうるため、
-    // 格上げ(提出済み/出席)だけ即保存し、格下げは最終確定時のみ保存する
-    if(isFinal === true || state === "submitted" || state === "attendance"){
+    if(isFinal !== true && (
+        state === "attendance" ||
+        state === "submitted" ||
+        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document))
+    )){
+        // 遅延描画の途中結果を先に出すと、出席・未提出・提出済みの色が現れたり消えたりする。
+        // 明示的な未提出以外の色付き判定は監視上限まで確定を保留する。
+        return false;
+    }
+    // 明示的な未提出は先に確定できる。それ以外は最終判定だけ保存する。
+    if(isFinal === true || state === "submit"){
         writeCachedMoocsAssignmentState(url, state);
     }
 
@@ -239,6 +409,7 @@ function applyCurrentMoocsLessonState(url, isFinal){
     if(touched){
         updateMoocsAssignmentDashboard();
     }
+    return true;
 }
 
 function collectMoocsLessonTabs(){
@@ -293,7 +464,7 @@ function renderMoocsAssignmentDashboard(tabItems){
 
 function buildMoocsAssignmentDashboardHtml(){
     return [
-        '<section id="' + iniadppAssignmentDashboardId + '" class="iniadpp-assignment-dashboard" aria-live="polite">',
+        '<section id="' + iniadppAssignmentDashboardId + '" class="iniadpp-assignment-dashboard">',
         '    <div class="iniadpp-assignment-dashboard__head">',
         '        <div>',
         '            <h2>課題・出席まとめ</h2>',
@@ -303,6 +474,7 @@ function buildMoocsAssignmentDashboardHtml(){
         '            <i class="fa fa-refresh" aria-hidden="true"></i>',
         '        </button>',
         '    </div>',
+        '    <div class="iniadpp-assignment-dashboard__notice" role="status" hidden></div>',
         '    <div class="iniadpp-assignment-dashboard__stats">',
         '        <button type="button" class="iniadpp-assignment-dashboard__stat" data-filter="attendance">',
         '            <span class="iniadpp-assignment-dashboard__count" data-count="attendance">0</span>',
@@ -321,9 +493,52 @@ function buildMoocsAssignmentDashboardHtml(){
         '            <span>確認中</span>',
         '        </button>',
         '    </div>',
-        '    <div class="iniadpp-assignment-dashboard__list"></div>',
+        '    <div class="iniadpp-assignment-dashboard__list" aria-busy="false"></div>',
         '</section>'
     ].join("");
+}
+
+function setMoocsAssignmentRefreshState(state, options){
+    const $dashboard = $("#" + iniadppAssignmentDashboardId);
+    if(!$dashboard.length) return;
+
+    const isLoading = state === "loading";
+    const $button = $dashboard.find(".iniadpp-assignment-dashboard__refresh");
+    const $icon = $button.find(".fa-refresh");
+    const $notice = $dashboard.find(".iniadpp-assignment-dashboard__notice");
+    const $results = $dashboard.find(".iniadpp-assignment-dashboard__list");
+
+    $results.attr("aria-busy", isLoading ? "true" : "false");
+    $button
+        .prop("disabled", isLoading)
+        .attr("aria-busy", isLoading ? "true" : "false")
+        .attr("title", isLoading ? "再読み込み中" : "再読み込み");
+    $icon.toggleClass("iniadpp-assignment-dashboard__refresh-icon--spinning", isLoading);
+
+    $notice
+        .removeClass("iniadpp-assignment-dashboard__notice--loading iniadpp-assignment-dashboard__notice--success iniadpp-assignment-dashboard__notice--error")
+        .addClass("iniadpp-assignment-dashboard__notice--" + state)
+        .prop("hidden", false);
+
+    if(state === "loading"){
+        if(options && options.hasPreviousState === false){
+            $notice.text("再読み込み中です。結果を確認しています。");
+        } else {
+            $notice.text("再読み込み中です。完了するまで前回の結果を表示しています。");
+        }
+        return;
+    }
+
+    if(state === "error"){
+        if(options && options.allHavePreviousState === false){
+            $notice.text("一部のページを再読み込みできませんでした。前回の結果がないページは「未確認」と表示しています。");
+        } else {
+            $notice.text("一部のページを再読み込みできませんでした。失敗したページは前回の結果を表示しています。");
+        }
+        return;
+    }
+
+    $notice.text("最新の結果に更新しました。");
 }
 
 function updateMoocsAssignmentDashboard(){
@@ -390,52 +605,64 @@ function getMoocsAssignmentStateLabel(state){
     return "確認中";
 }
 
-$(document).on("click", ".iniadpp-assignment-dashboard__refresh", function(){
-    markMoocsAssignmentTabs(true);
-});
-
-$(document).on("submit", "form", function(){
-    scheduleMoocsAssignmentAutoRefresh(2500);
-});
-
-$(document).on("click", "button, input[type='submit'], a.btn", function(){
-    const label = normalizeMoocsText($(this).text() || $(this).val() || "");
-    if(/(提出|送信|保存|アップロード|submit|upload|save)/i.test(label)){
-        scheduleMoocsAssignmentAutoRefresh(2500);
-    }
-});
-
-window.addEventListener("pageshow", function(event){
-    // pageshow は通常のページ表示でも発火するため、bfcache 復帰時だけ再確認する
-    if(!event || event.persisted !== true) return;
-    scheduleMoocsAssignmentAutoRefreshIfStale(300);
-});
-
-window.addEventListener("focus", function(){
-    scheduleMoocsAssignmentAutoRefreshIfStale(300);
-});
-
-document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "visible"){
-        scheduleMoocsAssignmentAutoRefreshIfStale(300);
-    }
-});
-
-$(document).on("click", ".iniadpp-assignment-dashboard__stat", function(){
-    const filter = $(this).attr("data-filter");
-    const $dashboard = $("#" + iniadppAssignmentDashboardId);
-    const tabItems = $dashboard.data("tabItems") || [];
-    const targetStates = filter === "pending" ? ["pending", "unknown"] : [filter];
-    // data-filter は attendance / submit(未提出) / submitted(提出済み) / pending
-    const firstMatch = tabItems.find(function(item){
-        const state = item.state || item.$li.attr("data-iniadpp-assignment-state") || "pending";
-        return targetStates.indexOf(state) !== -1;
+// content script は ace.toyo.ac.jp にも注入されるため、リスナ登録自体を MOOCs に限定する
+if(window.location.hostname === "moocs.iniad.org"){
+    $(document).on("click", ".iniadpp-assignment-dashboard__refresh", function(){
+        markMoocsAssignmentTabs(true);
     });
 
-    if(firstMatch && firstMatch.url){
-        window.location.href = firstMatch.url;
-    }
-});
+    $(document).on("submit", "form", function(){
+        if(isMoocsIgnoredElement(this)) return;
+        watchCurrentMoocsLessonRendering();
+        scheduleMoocsAssignmentAutoRefresh(2500, { ensureTrailingScan: true });
+    });
+
+    $(document).on("click", "button, input[type='button'], input[type='submit'], a.btn", function(){
+        if(isMoocsIgnoredElement(this)) return;
+
+        const label = getMoocsControlLabel(this);
+        if(/問題\s*を\s*開く/.test(label)){
+            watchCurrentMoocsLessonRendering();
+            scheduleMoocsAssignmentAutoRefresh(2500, { ensureTrailingScan: true });
+        }
+        if(/(提出|送信|保存|アップロード|submit|upload|save)/i.test(label)){
+            watchCurrentMoocsLessonRendering();
+            scheduleMoocsAssignmentAutoRefresh(2500, { ensureTrailingScan: true });
+        }
+    });
+
+    window.addEventListener("pageshow", function(event){
+        // pageshow は通常のページ表示でも発火するため、bfcache 復帰時だけ再確認する
+        if(!event || event.persisted !== true) return;
+        scheduleMoocsAssignmentAutoRefreshIfStale(300);
+    });
+
+    window.addEventListener("focus", function(){
+        scheduleMoocsAssignmentAutoRefreshIfStale(300);
+    });
+
+    document.addEventListener("visibilitychange", function(){
+        if(document.visibilityState === "visible"){
+            scheduleMoocsAssignmentAutoRefreshIfStale(300);
+        }
+    });
+
+    $(document).on("click", ".iniadpp-assignment-dashboard__stat", function(){
+        const filter = $(this).attr("data-filter");
+        const $dashboard = $("#" + iniadppAssignmentDashboardId);
+        const tabItems = $dashboard.data("tabItems") || [];
+        const targetStates = filter === "pending" ? ["pending", "unknown"] : [filter];
+        // data-filter は attendance / submit(未提出) / submitted(提出済み) / pending
+        const firstMatch = tabItems.find(function(item){
+            const state = item.state || item.$li.attr("data-iniadpp-assignment-state") || "pending";
+            return targetStates.indexOf(state) !== -1;
+        });
+
+        if(firstMatch && firstMatch.url){
+            window.location.href = firstMatch.url;
+        }
+    });
+}
 
 function resolveMoocsTabUrl(rawHref){
     try {
@@ -463,8 +690,14 @@ function isCurrentMoocsLessonUrl(url){
 }
 
 function classifyMoocsLessonTab(url, forceReload){
-    if(isCurrentMoocsLessonUrl(url)){
+    const isCurrentLesson = isCurrentMoocsLessonUrl(url);
+    if(isCurrentLesson && forceReload !== true){
         return Promise.resolve(classifyMoocsLessonDocument(document));
+    }
+
+    if(isCurrentLesson){
+        // 強制更新では現在ページも no-store + rendered frame で読み直し、別タブでの提出を反映する
+        iniadppCurrentLessonRemoteScanVersion++;
     }
 
     if(!forceReload && Object.prototype.hasOwnProperty.call(iniadppLessonClassificationCache, url)){
@@ -475,9 +708,11 @@ function classifyMoocsLessonTab(url, forceReload){
     iniadppLessonClassificationGeneration[url] = generation;
 
     // 未表示タブの提出状態は古い HTTP キャッシュを拾うとずれるため、毎回最新を取りに行く。
+    // 応答しないサーバーで強制更新の in-flight ロックが解放されないままにならないよう上限を設ける。
     iniadppLessonClassificationCache[url] = fetch(url, {
         credentials: "include",
-        cache: "no-store"
+        cache: "no-store",
+        signal: createMoocsFetchTimeoutSignal(iniadppLessonFetchTimeoutMs)
     })
         .then(function(response){
             if(!response.ok) throw new Error("HTTP " + response.status);
@@ -486,23 +721,57 @@ function classifyMoocsLessonTab(url, forceReload){
         .then(function(html){
             const parsed = new DOMParser().parseFromString(html, "text/html");
             const staticKind = classifyMoocsLessonDocument(parsed);
-            if(staticKind !== "submit"){
-                return staticKind;
+            const staticText = normalizeMoocsText(getMoocsLessonMainText(parsed));
+            // 色付き状態は静的HTMLだけで即決せず、遅延描画が終わった状態で確定する。
+            // none は全資料ページを iframe 監視しないよう、静的DOMに対象controlがある場合だけ検証する。
+            const needsStableRenderedVerification = staticKind === "attendance" ||
+                staticKind === "submitted" ||
+                (!staticKind && !isMoocsResubmissionAssignment(staticText) && hasMoocsOpenQuestionControl(parsed));
+
+            if(needsStableRenderedVerification){
+                // 直近の確定結果と静的判定が一致するページは、遅延描画で結果が変わる見込みが薄いため
+                // 非強制スキャンでは 4.5 秒の隠しフレーム再検証を省く。強制再読込では常にフル検証する
+                if(forceReload !== true &&
+                    (staticKind === "attendance" || staticKind === "submitted") &&
+                    readCachedMoocsAssignmentState(url) === staticKind){
+                    return staticKind;
+                }
+
+                const renderedVerification = classifyMoocsLessonTabInRenderedFrame(url, null, function(){
+                    return iniadppLessonClassificationGeneration[url] !== generation;
+                }, {
+                    waitForFinalClassification: true,
+                    allowEarlyResolve: false
+                });
+
+                return renderedVerification
+                    .then(function(renderedKind){
+                        return typeof renderedKind === "string" ? renderedKind : staticKind;
+                    })
+                    .catch(function(error){
+                        console.warn("[INIAD Plus] Failed to verify stable lesson classification:", url, error);
+                        throw error;
+                    });
             }
 
+            if(staticKind !== "submit") return staticKind;
+
             return classifyMoocsLessonTabInRenderedFrame(url, function(lateKind){
-                if(!lateKind) return;
+                if(typeof lateKind !== "string") return;
                 applyMoocsLateAssignmentClassification(url, generation, lateKind);
             }, function(){
                 // 強制再読込で新しい判定が始まっていたら、古い世代の iframe 検査は起こさない・続けない
                 return iniadppLessonClassificationGeneration[url] !== generation;
+            }, {
+                allowEarlyResolve: forceReload !== true
             })
                 .then(function(renderedKind){
-                    return renderedKind || staticKind;
+                    // 空文字は「対象なし」という有効な描画結果。null/undefined の中断時だけ静的結果へ戻す。
+                    return typeof renderedKind === "string" ? renderedKind : staticKind;
                 })
                 .catch(function(error){
                     console.warn("[INIAD Plus] Failed to inspect rendered lesson tab:", url, error);
-                    return staticKind;
+                    throw error;
                 });
         })
         .catch(function(error){
@@ -513,21 +782,47 @@ function classifyMoocsLessonTab(url, forceReload){
     return iniadppLessonClassificationCache[url];
 }
 
-function classifyMoocsLessonTabInRenderedFrame(url, onLateUpdate, isStale){
+function classifyMoocsLessonTabInRenderedFrame(url, onLateUpdate, isStale, options){
     // 隠し iframe を同時に大量に開くと読み込みを奪い合って全体が遅くなるため、同時実行数を絞る
     return new Promise(function(resolve, reject){
         iniadppRenderedInspectionQueue.push(function(){
+            let released = false;
+            function releaseQueueSlot(){
+                if(released) return;
+                released = true;
+                iniadppRenderedInspectionActiveCount--;
+                pumpMoocsRenderedInspectionQueue();
+            }
+
             if(typeof isStale === "function" && isStale()){
                 // 実行待ちの間に新しい判定へ置き換えられた検査は iframe を開かずに終える
-                iniadppRenderedInspectionActiveCount--;
-                pumpMoocsRenderedInspectionQueue();
-                resolve("");
+                releaseQueueSlot();
+                resolve(null);
                 return;
             }
-            inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, function(){
-                iniadppRenderedInspectionActiveCount--;
-                pumpMoocsRenderedInspectionQueue();
-            }).then(resolve, reject);
+
+            let inspectionPromise;
+            try {
+                inspectionPromise = inspectMoocsLessonTabRenderedFrame(
+                    url,
+                    onLateUpdate,
+                    isStale,
+                    releaseQueueSlot,
+                    options
+                );
+            } catch(error){
+                releaseQueueSlot();
+                reject(error);
+                return;
+            }
+
+            Promise.resolve(inspectionPromise).then(function(kind){
+                releaseQueueSlot();
+                resolve(kind);
+            }, function(error){
+                releaseQueueSlot();
+                reject(error);
+            });
         });
         pumpMoocsRenderedInspectionQueue();
     });
@@ -541,7 +836,7 @@ function pumpMoocsRenderedInspectionQueue(){
     }
 }
 
-function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComplete){
+function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComplete, options){
     return new Promise(function(resolve, reject){
         const iframe = document.createElement("iframe");
         let done = false;
@@ -552,6 +847,8 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
         let observer = null;
         let loadedAt = 0;
         let lastMutationAt = 0;
+        const waitForFinalClassification = !!(options && options.waitForFinalClassification);
+        const allowEarlyResolve = !(options && options.allowEarlyResolve === false);
 
         function releaseSlot(){
             if(typeof onComplete === "function"){
@@ -579,22 +876,30 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
         function finish(kind){
             if(done) return;
             done = true;
-            if(!resolvedEarly){
-                resolve(kind);
-            } else if(kind !== "submit" && typeof onLateUpdate === "function"){
-                // 未提出として先に確定した後に提出済み等が描画されたケースの補正
-                onLateUpdate(kind);
+            try {
+                if(!resolvedEarly){
+                    resolve(kind);
+                } else if(kind !== "submit" && typeof onLateUpdate === "function"){
+                    // 未提出として先に確定した後に提出済み等が描画されたケースの補正
+                    onLateUpdate(kind);
+                }
+            } catch(error){
+                console.warn("[INIAD Plus] Failed to apply a late lesson classification:", error);
+            } finally {
+                cleanup();
             }
-            cleanup();
         }
 
         function fail(error){
             if(done) return;
             done = true;
-            if(!resolvedEarly){
-                reject(error);
+            try {
+                if(!resolvedEarly){
+                    reject(error);
+                }
+            } finally {
+                cleanup();
             }
-            cleanup();
         }
 
         function scheduleInspection(delayMs){
@@ -608,7 +913,7 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
 
             if(typeof isStale === "function" && isStale()){
                 // 新しい判定に置き換えられた古い検査は打ち切って枠を返す
-                finish("");
+                finish(null);
                 return;
             }
 
@@ -625,17 +930,34 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
                 return;
             }
 
-            const kind = classifyMoocsLessonDocument(doc);
+            let kind = "";
+            try {
+                kind = classifyMoocsLessonDocument(doc);
+            } catch(error){
+                fail(error);
+                return;
+            }
             const now = Date.now();
+
+            if(waitForFinalClassification){
+                if(now - loadedAt >= iniadppRenderedInspectionMaxWaitMs){
+                    finish(kind);
+                }
+                return;
+            }
 
             if(kind !== "submit" || now - loadedAt >= iniadppRenderedInspectionMaxWaitMs){
                 finish(kind);
                 return;
             }
 
-            if(!resolvedEarly && now - lastMutationAt >= iniadppRenderedInspectionQuietMs && !hasMoocsConflictingCachedState(url)){
-                // 描画が静止したら未提出として先に反映し、遅れて描画される提出済み表示は maxWait まで監視して補正する。
-                // 前回「提出済み/出席」と確定しているページは、描画待ちの取り違えで格下げしないよう maxWait まで待ちきる
+            if(allowEarlyResolve &&
+                !resolvedEarly &&
+                now - lastMutationAt >= iniadppRenderedInspectionQuietMs &&
+                !hasMoocsConflictingCachedState(url) &&
+                hasMoocsDefinitiveUnsubmittedState(doc)){
+                // 明示的な「未提出」表示や操作可能な「問題を開く」がある場合だけ赤表示を先行確定する。
+                // 入力欄があるだけの曖昧な状態は、遅れて「アップロード済み」が描画される可能性があるため待ちきる。
                 resolvedEarly = true;
                 releaseSlot();
                 resolve(kind);
@@ -683,7 +1005,13 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
                     lastMutationAt = Date.now();
                     scheduleInspection(iniadppRenderedInspectionDebounceMs);
                 });
-                observer.observe(doc, { childList: true, subtree: true, characterData: true });
+                observer.observe(doc, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true,
+                    attributes: true,
+                    attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden", "disabled", "aria-disabled"]
+                });
             } catch(error){
                 observer = null;
             }
@@ -712,7 +1040,11 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
             "pointer-events:none"
         ].join(";");
 
-        (document.body || document.documentElement).appendChild(iframe);
+        try {
+            (document.body || document.documentElement).appendChild(iframe);
+        } catch(error){
+            fail(error);
+        }
     });
 }
 
@@ -727,7 +1059,13 @@ function classifyMoocsLessonDocument(doc){
         return "attendance";
     }
 
-    const scopes = collectMoocsSubmissionScopes(doc);
+    // 問題をまだ開ける状態では、途中保存の「アップロード済み」があっても最終提出前として扱う
+    if(hasMoocsOpenQuestionAction(doc)){
+        return "submit";
+    }
+
+    const scopeTextMemo = new Map();
+    const scopes = collectMoocsSubmissionScopes(doc, scopeTextMemo);
     if(!scopes.length){
         return "";
     }
@@ -735,24 +1073,73 @@ function classifyMoocsLessonDocument(doc){
     // 説明文の「提出しましたら〜」等での誤判定を避けるため、提出フォーム近傍だけを見る。
     // 複数の提出欄が混在するページは、すべて提出済みのときだけ提出済み扱いにする
     const allSubmitted = scopes.every(function(scope){
-        return hasMoocsSubmittedMark(normalizeMoocsText(scope.textContent));
+        return hasMoocsSubmittedMark(getMoocsComparableTextMemoized(scope, scopeTextMemo));
     });
 
     return allSubmitted ? "submitted" : "submit";
 }
 
 function hasMoocsSubmittedMark(text){
-    // ステータス表示の語彙だけに絞り、「未提出」「Unsubmitted」「Not submitted」を除外する
+    const normalizedText = normalizeMoocsText(text);
+    if(hasMoocsUnsubmittedMark(normalizedText)) return false;
+
     // MOOCs のファイル提出欄は「提出済み」ではなく「アップロード済み」と表示される
-    return /(提出\s*済|回答\s*済|解答\s*済|送信\s*済|アップロード\s*済|(?<!un)(?<!not\s)submitted)/i.test(text);
+    return /(提出\s*済|回答\s*済|解答\s*済|送信\s*済|アップロード\s*済|\bsubmitted\b)/i.test(normalizedText);
+}
+
+function hasMoocsUnsubmittedMark(text){
+    // text node の境界で語が連結されても見落とさないよう、英語側は先頭の word boundary に依存しない。
+    // 「未提出の場合は0点」「未提出の課題は0点」「未提出では0点」のような説明文で、
+    // 同じ提出欄にある実際の「提出済み」表示を打ち消さないよう、条件・説明へ続く表現は除外する。
+    return /(未\s*(?:提出|回答|解答|送信|アップロード)(?:\s*済)?(?!\s*(?:(?:の\s*)?(?:場合|とき|時|際)|の\s*(?:まま|方|人|学生|者|課題|回答|解答|提出物|ファイル)|者|は|が|では|でも|だと|だが|なら|ならば|であれば|ですと|になる|になります|となる|となります))|(?:unsubmitted|not(?:[\s-]+yet)?[\s-]+submitted))/i.test(text);
+}
+
+function hasMoocsDefinitiveUnsubmittedState(doc){
+    if(hasMoocsOpenQuestionAction(doc)) return true;
+
+    const scopeTextMemo = new Map();
+    const scopes = collectMoocsSubmissionScopes(doc, scopeTextMemo);
+    return scopes.some(function(scope){
+        return hasMoocsUnsubmittedMark(getMoocsComparableTextMemoized(scope, scopeTextMemo));
+    });
 }
 
 function getMoocsLessonMainText(doc){
     const root = doc.querySelector(".content-wrapper") || doc.body;
     if(!root) return "";
 
+    return getMoocsComparableText(root);
+}
+
+function getMoocsComparableTextMemoized(root, memo){
+    if(memo.has(root)) return memo.get(root);
+    const text = getMoocsComparableText(root);
+    memo.set(root, text);
+    return text;
+}
+
+function getMoocsComparableText(root){
+    if(!root) return "";
+
     const clone = root.cloneNode(true);
-    const ignoredNodes = clone.querySelectorAll([
+    const ignoredNodes = clone.querySelectorAll(getMoocsIgnoredSelector());
+
+    for(let i = 0; i < ignoredNodes.length; i++){
+        ignoredNodes[i].parentNode.removeChild(ignoredNodes[i]);
+    }
+
+    // textContent は </p><span> の境界を空白なしで連結するため、text node ごとに区切って比較する
+    const textParts = [];
+    const walker = clone.ownerDocument.createTreeWalker(clone, 4);
+    while(walker.nextNode()){
+        textParts.push(walker.currentNode.nodeValue || "");
+    }
+
+    return normalizeMoocsText(textParts.join(" "));
+}
+
+function getMoocsIgnoredSelector(){
+    return [
         "#" + iniadppAssignmentDashboardId,
         ".main-sidebar",
         ".main-header",
@@ -761,18 +1148,17 @@ function getMoocsLessonMainText(doc){
         ".pagination",
         ".iniadplus-menu-item",
         ".iniadpp-download-group",
-        ".mymemo-contents"
-    ].join(","));
-
-    for(let i = 0; i < ignoredNodes.length; i++){
-        ignoredNodes[i].parentNode.removeChild(ignoredNodes[i]);
-    }
-
-    return clone.textContent || "";
+        ".mymemo-contents",
+        "script",
+        "style",
+        "template",
+        "noscript"
+    ].join(",");
 }
 
-function collectMoocsSubmissionScopes(doc){
+function collectMoocsSubmissionScopes(doc, scopeTextMemo){
     const scopes = [];
+    const textMemo = scopeTextMemo || new Map();
     const fields = doc.querySelectorAll("textarea, select, input");
 
     for(let i = 0; i < fields.length; i++){
@@ -783,12 +1169,13 @@ function collectMoocsSubmissionScopes(doc){
         if(isMoocsIgnoredElement(field)) continue;
 
         const scope = field.closest("form, .box, .panel, .well, section, article, .content") || field.parentElement;
-        const scopeText = normalizeMoocsText(scope ? scope.textContent : "");
+        if(!scope || scopes.indexOf(scope) !== -1) continue;
+
+        // 同じスコープに属するフィールドごとに大きなサブツリーを clone + 全文走査し直さない
+        const scopeText = getMoocsComparableTextMemoized(scope, textMemo);
 
         if(!isMoocsSubmissionScope(scopeText)) continue;
-        if(scope && scopes.indexOf(scope) === -1){
-            scopes.push(scope);
-        }
+        scopes.push(scope);
     }
 
     if(!scopes.length && hasMoocsSubmitButton(doc)){
@@ -802,19 +1189,158 @@ function collectMoocsSubmissionScopes(doc){
     return scopes;
 }
 
+function hasMoocsOpenQuestionAction(doc){
+    const actions = doc.querySelectorAll("button, input[type='button'], input[type='submit'], a.btn");
+
+    for(let i = 0; i < actions.length; i++){
+        const action = actions[i];
+        if(!isMoocsActionableControl(action)) continue;
+        if(/問題\s*を\s*開く/.test(getMoocsControlLabel(action))){
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasMoocsOpenQuestionControl(doc){
+    const controls = doc.querySelectorAll("button, input[type='button'], input[type='submit'], a.btn");
+
+    for(let i = 0; i < controls.length; i++){
+        const control = controls[i];
+        if(isMoocsIgnoredElement(control)) continue;
+        if(/問題\s*を\s*開く/.test(getMoocsControlLabel(control))){
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function hasMoocsSubmitButton(doc){
     const buttons = doc.querySelectorAll("button, input[type='submit'], a.btn");
 
     for(let i = 0; i < buttons.length; i++){
         const button = buttons[i];
-        if(isMoocsIgnoredElement(button)) continue;
+        if(!isMoocsActionableControl(button)) continue;
 
-        const label = normalizeMoocsText(button.textContent || button.value || "");
+        const label = getMoocsControlLabel(button);
         if(/(提出|送信|保存|アップロード|submit|upload)/i.test(label)){
             return true;
         }
     }
 
+    return false;
+}
+
+function getMoocsControlLabel(control){
+    const text = normalizeMoocsText(control.textContent || "");
+    if(text) return text;
+
+    const value = normalizeMoocsText(control.value || control.getAttribute("value") || "");
+    if(value) return value;
+
+    return normalizeMoocsText(control.getAttribute("aria-label") || "");
+}
+
+function isMoocsActionableControl(control){
+    if(!control || isMoocsIgnoredElement(control)) return false;
+    if(control.disabled === true || control.hasAttribute("disabled")) return false;
+    if(String(control.getAttribute("aria-disabled") || "").toLowerCase() === "true") return false;
+
+    const ownerDocument = control.ownerDocument;
+    const view = ownerDocument && ownerDocument.defaultView;
+    const isRenderedDocument = !!(view && ownerDocument.documentElement && ownerDocument.documentElement.contains(control));
+    let current = control;
+    while(current && current.nodeType === 1){
+        if(current.hidden === true || current.inert === true || current.hasAttribute("hidden") || current.hasAttribute("inert")){
+            return false;
+        }
+        if(String(current.getAttribute("aria-hidden") || "").toLowerCase() === "true") return false;
+        if(current.classList && (current.classList.contains("hidden") || current.classList.contains("d-none"))){
+            return false;
+        }
+
+        const inlineStyle = current.style;
+        if(inlineStyle && (
+            inlineStyle.display === "none" ||
+            inlineStyle.visibility === "hidden" ||
+            inlineStyle.visibility === "collapse" ||
+            inlineStyle.contentVisibility === "hidden" ||
+            parseFloat(inlineStyle.opacity) === 0 ||
+            inlineStyle.pointerEvents === "none"
+        )){
+            return false;
+        }
+
+        if(isRenderedDocument && typeof view.getComputedStyle === "function"){
+            const computedStyle = view.getComputedStyle(current);
+            const opacity = parseFloat(computedStyle.opacity);
+            if(computedStyle.display === "none" ||
+                computedStyle.visibility === "hidden" ||
+                computedStyle.visibility === "collapse" ||
+                computedStyle.contentVisibility === "hidden" ||
+                (!Number.isNaN(opacity) && opacity <= 0) ||
+                computedStyle.pointerEvents === "none" ||
+                isMoocsFullyClippedStyle(computedStyle)){
+                return false;
+            }
+
+            if(current !== control && computedStyle.display !== "contents" && typeof current.getBoundingClientRect === "function"){
+                const bounds = current.getBoundingClientRect();
+                const clipsOverflow = [computedStyle.overflow, computedStyle.overflowX, computedStyle.overflowY]
+                    .some(function(value){ return value === "hidden" || value === "clip"; });
+                if(clipsOverflow && bounds && (bounds.width <= 0 || bounds.height <= 0)) return false;
+            }
+        }
+
+        current = current.parentElement;
+    }
+
+    // DOMParser で作った静的文書にはレイアウト情報がないため、属性・inline style の確認だけに留める。
+    // 現在ページと描画確認iframeでは、実際に面積を持つ可視コントロールだけを操作可能とみなす。
+    if(isRenderedDocument){
+        if(typeof control.checkVisibility === "function"){
+            try {
+                if(!control.checkVisibility({
+                    checkOpacity: true,
+                    checkVisibilityCSS: true,
+                    opacityProperty: true,
+                    visibilityProperty: true
+                })){
+                    return false;
+                }
+            } catch(error){
+                // 未対応オプションのブラウザーでは rect 検査へフォールバックする
+            }
+        }
+
+        if(typeof control.getClientRects !== "function") return false;
+        const rects = control.getClientRects();
+        let hasPositiveArea = false;
+        for(let i = 0; rects && i < rects.length; i++){
+            if(rects[i].width > 0 && rects[i].height > 0){
+                hasPositiveArea = true;
+                break;
+            }
+        }
+        if(!hasPositiveArea) return false;
+
+        if(typeof control.getBoundingClientRect === "function"){
+            const bounds = control.getBoundingClientRect();
+            if(!bounds || bounds.width <= 0 || bounds.height <= 0) return false;
+        }
+    }
+
+    return true;
+}
+
+function isMoocsFullyClippedStyle(style){
+    const clip = String(style.clip || "").toLowerCase().replace(/\s+/g, "");
+    if(/^rect\(0(?:px)?,?0(?:px)?,?0(?:px)?,?0(?:px)?\)$/.test(clip)) return true;
+
+    const clipPath = String(style.clipPath || style.webkitClipPath || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if(/^inset\((?:50%|100%)(?: (?:50%|100%)){0,3}\)$/.test(clipPath)) return true;
     return false;
 }
 
@@ -833,19 +1359,16 @@ function isMoocsResubmissionAssignment(text){
 }
 
 function isMoocsIgnoredElement(element){
-    return !!element.closest([
-        "#" + iniadppAssignmentDashboardId,
-        ".main-sidebar",
-        ".main-header",
-        ".sidebar",
-        ".navbar",
-        ".pagination",
-        ".iniadplus-menu-item",
-        ".iniadpp-download-group",
-        ".mymemo-contents"
-    ].join(","));
+    return !!element.closest(getMoocsIgnoredSelector());
 }
 
 function normalizeMoocsText(text){
     return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function createMoocsFetchTimeoutSignal(timeoutMs){
+    if(typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"){
+        return AbortSignal.timeout(timeoutMs);
+    }
+    return undefined;
 }

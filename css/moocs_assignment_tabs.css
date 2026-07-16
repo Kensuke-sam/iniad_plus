@@ -71,10 +71,56 @@
   width: 32px;
 }
 
-.iniadpp-assignment-dashboard__refresh:hover,
-.iniadpp-assignment-dashboard__refresh:focus {
+.iniadpp-assignment-dashboard__refresh:not(:disabled):hover,
+.iniadpp-assignment-dashboard__refresh:not(:disabled):focus {
   background: #eef3f7;
   color: var(--iniad-primary-hover);
+}
+
+.iniadpp-assignment-dashboard__refresh:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.iniadpp-assignment-dashboard__refresh-icon--spinning {
+  animation: iniadpp-assignment-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes iniadpp-assignment-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iniadpp-assignment-dashboard__refresh-icon--spinning {
+    animation: none;
+  }
+}
+
+.iniadpp-assignment-dashboard__notice {
+  border-radius: var(--iniad-radius);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  padding: 7px 9px;
+}
+
+.iniadpp-assignment-dashboard__notice[hidden] {
+  display: none;
+}
+
+.iniadpp-assignment-dashboard__notice--loading,
+.iniadpp-assignment-dashboard__notice--success {
+  background: #eef6fc;
+  border: 1px solid rgba(51, 122, 183, 0.24);
+  color: var(--iniad-primary-hover);
+}
+
+.iniadpp-assignment-dashboard__notice--error {
+  background: #fff8e8;
+  border: 1px solid rgba(240, 173, 78, 0.42);
+  color: #805b17;
 }
 
 .iniadpp-assignment-dashboard__stats {

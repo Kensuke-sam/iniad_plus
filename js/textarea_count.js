@@ -1,8 +1,10 @@
 $(function(){
-    if(window.location.href.indexOf("moocs") != -1){
+    if(window.location.hostname === "moocs.iniad.org"){
         setTimeout(function(){
             let txtareas = $("textarea");
             for(let txtarea of txtareas){
+                if($(txtarea).hasClass("textarea-mymemo")) continue;
+
                 let txt = $(txtarea).val();
 
                 let txtcnt = txt.length;
@@ -24,6 +26,10 @@ $(function(){
 });
 
 $(document).on("input", "textarea", function(){
+    // 初期表示側と同じく MOOCs だけを対象にし、拡張自身のメモ欄にはカウントを挿入しない
+    if(window.location.hostname !== "moocs.iniad.org") return;
+    if($(this).hasClass("textarea-mymemo")) return;
+
     let thistxt = $(this).val();
     let txtcnt = thistxt.length;
     let wordcnt;

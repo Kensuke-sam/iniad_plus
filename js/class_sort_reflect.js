@@ -2,7 +2,20 @@ $(function(){
     if(window.location.pathname == "/courses"){
         if(localStorage.getItem("registedclass") != null){
             let classes_data = localStorage.getItem("registedclass");
-            let classes_parsed = JSON.parse(classes_data);
+            let classes_parsed;
+            try{
+                classes_parsed = JSON.parse(classes_data);
+            }
+            catch(error){
+                console.error("Failed to parse registedclass from localStorage.", error);
+                localStorage.removeItem("registedclass");
+                return;
+            }
+            // 配列以外が保存されていると .flex を空にした後の反復で落ち、コース一覧が消えるため先に検証する
+            if(!Array.isArray(classes_parsed)){
+                localStorage.removeItem("registedclass");
+                return;
+            }
 
             let classes = $(".flex").children();
 
