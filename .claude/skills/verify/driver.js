@@ -9,8 +9,8 @@ const REPO = "/Users/hanesoubukensuke/Documents/myapps/iniad_plus";
 const HERE = __dirname;
 const TLS_DIR = process.env.TLS_DIR || HERE;
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR || HERE;
-const LESSON_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const ASSIGNMENT_STATE_STORAGE_KEY = "iniadppAssignmentStates:v4";
+const LESSON_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+const ASSIGNMENT_STATE_STORAGE_KEY = "iniadppAssignmentStates:v6";
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 // ---- fixture server ----------------------------------------------------
@@ -24,8 +24,8 @@ const state = {
 };
 const requestLog = [];
 
-function shell(body) {
-  const links = LESSON_NUMBERS
+function shell(body, lessonNumbers) {
+  const links = (lessonNumbers || LESSON_NUMBERS)
     .map((n) => `<li><a href="/lesson/${n}">${n}</a></li>`)
     .join("");
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>cs_test lesson</title></head>
@@ -97,10 +97,40 @@ function pageBody(n) {
 <form action="/dummy" onsubmit="return false"><input type="file" name="draft">
 <p>途中ファイル: アップロード済み</p><span id="p9actions"></span></form></div>
 <script>setTimeout(function(){var button=document.createElement("button");button.type="button";button.textContent="問題を開く";document.getElementById("p9actions").appendChild(button);},2500);</script>`;
-  return `<div id="p10root" class="box"><p>出席確認: 読み込み中です。</p>
+  if (n === 10)
+    return `<div id="p10root" class="box"><p>出席確認: 読み込み中です。</p>
 <form action="/dummy" onsubmit="return false"><label><input type="radio" name="late-attendance" value="1">はい</label>
 <button type="button">送信</button></form></div>
 <script>setTimeout(function(){document.getElementById("p10root").innerHTML="<p>参考資料のページです。</p>";},2500);</script>`;
+  if (n === 11)
+    return `<div class="box"><div class="alert alert-warning">現在回答を受け付けていません。</div>
+<h2>小テスト / Mini Quiz 1</h2><form action="/dummy" onsubmit="return false">
+<label>1. <input type="text" name="answer1" value="int64" readonly></label>
+<label>2. <input type="text" name="answer2" value="3, 2, 1" readonly></label>
+<p>回答は自動的に記録されますが、最後に「提出」ボタンをクリックして提出を確認してください。</p>
+<button type="submit">提出</button></form></div>`;
+  if (n === 12)
+    return `<div class="box"><p>説明文では「現在回答を受け付けていません。」と表示される場合があります。</p>
+<div class="alert alert-warning" hidden aria-hidden="true">現在回答を受け付けていません。</div>
+<div class="alert alert-warning" style="width:0;height:0;overflow:hidden;padding:0;border:0">現在回答を受け付けていません。</div>
+<h2>課題7</h2><form action="/dummy" onsubmit="return false">
+<textarea name="answer"></textarea><p>状態: 未提出</p><button type="submit">提出</button></form></div>`;
+  if (n === 13)
+    return `<div class="box"><div class="alert alert-warning">現在回答を受け付けていません。</div>
+<h2>課題8</h2><form action="/dummy" onsubmit="return false">
+<textarea name="answer" readonly>提出した回答</textarea><p>状態: 提出済み</p>
+<button type="submit">提出</button></form></div>`;
+  if (n === 14)
+    return `<div class="box"><div class="alert alert-warning">現在回答を受け付けていません。</div>
+<h2>課題9</h2><form action="/dummy" onsubmit="return false">
+<textarea name="answer" readonly>提出した回答</textarea><p id="p14status">状態: 処理中</p>
+<button type="submit">提出</button></form></div>
+<script>setTimeout(function(){document.getElementById("p14status").textContent="状態: 提出済み";},2500);</script>`;
+  return `<div class="box"><div class="alert alert-warning">現在回答を受け付けていません。</div>
+<h2>課題10</h2><form action="/dummy" onsubmit="return false">
+<textarea name="answer" readonly>提出した回答</textarea><p id="p15status">状態: 処理中</p>
+<button type="submit">提出</button></form></div>
+<script>setTimeout(function(){document.getElementById("p15status").textContent="状態: 提出済み";},2500);</script>`;
 }
 
 const server = https.createServer(
@@ -121,7 +151,7 @@ const server = https.createServer(
           return;
         }
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(shell(pageBody(pageNumber)));
+        res.end(shell(pageBody(pageNumber), pageNumber === 15 ? [15] : LESSON_NUMBERS));
       };
       if (isFetchRequest && state.slowFetchPage === pageNumber && state.slowFetchRemaining > 0) {
         state.slowFetchRemaining -= 1;
@@ -221,6 +251,25 @@ async function waitForCondition(predicate, timeoutMs, label) {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
+async function waitForLessonRequestQuiescence(quietMs, timeoutMs) {
+  const startedAt = Date.now();
+  let quietStartedAt = startedAt;
+  let previousCount = lessonRequestsSince(0);
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const currentCount = lessonRequestsSince(0);
+    if (currentCount !== previousCount) {
+      previousCount = currentCount;
+      quietStartedAt = Date.now();
+    } else if (Date.now() - quietStartedAt >= quietMs) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error("Timed out waiting for lesson request quiescence");
+}
+
 // ---- main --------------------------------------------------------------
 let browser = null;
 (async () => {
@@ -259,14 +308,17 @@ let browser = null;
   const consoleErrors = [];
   const consoleWarnings = [];
   const pageErrors = [];
-  page.on("dialog", (d) => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
-  page.on("console", (msg) => {
-    const location = msg.location();
-    const entry = { text: msg.text(), url: location && location.url ? location.url : "" };
-    if (msg.type() === "error") consoleErrors.push(entry);
-    if (msg.type() === "warn") consoleWarnings.push(entry);
-  });
-  page.on("pageerror", (error) => { pageErrors.push(error.message || String(error)); });
+  const attachPageDiagnostics = (targetPage) => {
+    targetPage.on("dialog", (d) => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
+    targetPage.on("console", (msg) => {
+      const location = msg.location();
+      const entry = { text: msg.text(), url: location && location.url ? location.url : "" };
+      if (msg.type() === "error") consoleErrors.push(entry);
+      if (msg.type() === "warn") consoleWarnings.push(entry);
+    });
+    targetPage.on("pageerror", (error) => { pageErrors.push(error.message || String(error)); });
+  };
+  attachPageDiagnostics(page);
 
   // ---- Phase 1: cold load ----
   console.log("\n== Phase 1: cold load ==");
@@ -288,7 +340,7 @@ let browser = null;
       return !hasCounter;
     });
   })();
-  const tl1 = await watch(page, 13000, 150);
+  const tl1 = await watch(page, 19000, 150);
   const fin1 = tl1[tl1.length - 1];
   console.log("final:", JSON.stringify(fin1));
   check("dashboard appeared", tl1.length > 0);
@@ -327,6 +379,29 @@ let browser = null;
   check("P10 transient attendance never flashes green",
     p10attendanceAt === null && fin1.badges["10"] === "none",
     `attendance@${p10attendanceAt}ms final=${fin1.badges["10"]}`);
+  const p11submitAt = firstAt(tl1, 11, "submit");
+  const p11submittedAt = firstAt(tl1, 11, "submitted");
+  const p11attendanceAt = firstAt(tl1, 11, "attendance");
+  check("P11 closed 小テスト with filled answers and visible submit stays excluded without status flash",
+    fin1.badges["11"] === "none" && p11submitAt === null &&
+      p11submittedAt === null && p11attendanceAt === null,
+    `submit@${p11submitAt}ms submitted@${p11submittedAt}ms attendance@${p11attendanceAt}ms final=${fin1.badges["11"]}`);
+  const p12noneAt = firstAt(tl1, 12, "none");
+  check("P12 quoted text and hidden stale closed alert keep the actionable form unsubmitted",
+    fin1.badges["12"] === "submit" && p12noneAt === null,
+    `none@${p12noneAt}ms final=${fin1.badges["12"]}`);
+  const p13noneAt = firstAt(tl1, 13, "none");
+  const p13submitAt = firstAt(tl1, 13, "submit");
+  check("P13 closed assignment with explicit 提出済み is submitted without status flash",
+    fin1.badges["13"] === "submitted" && p13noneAt === null && p13submitAt === null,
+    `none@${p13noneAt}ms submit@${p13submitAt}ms final=${fin1.badges["13"]}`);
+  const p14noneAt = firstAt(tl1, 14, "none");
+  const p14submitAt = firstAt(tl1, 14, "submit");
+  const p14submittedAt = firstAt(tl1, 14, "submitted");
+  check("P14 closed assignment waits for delayed 提出済み without none/submit flash",
+    fin1.badges["14"] === "submitted" && p14noneAt === null &&
+      p14submitAt === null && p14submittedAt !== null,
+    `none@${p14noneAt}ms submit@${p14submitAt}ms submitted@${p14submittedAt}ms final=${fin1.badges["14"]}`);
   check("pending count 0 at end", fin1.counts.pending === "0");
   const p3At = firstAt(tl1, 3, "submit");
   check("true-unsubmitted resolves < 4500ms (old impl was >5200ms)", p3At !== null && p3At < 4500, `${p3At}ms`);
@@ -341,6 +416,58 @@ let browser = null;
     LESSON_NUMBERS.map(String).every((k) => ssStates[k]),
     JSON.stringify(ssStates));
   check("sessionStorage P4 corrected to submitted", ssStates["4"] === "submitted", ssStates["4"]);
+  const closedFixtureStates = { 11: "none", 12: "submit", 13: "submitted", 14: "submitted" };
+  check("sessionStorage caches closed and stale-alert fixtures with their final states",
+    Object.entries(closedFixtureStates).every(([pageNumber, expected]) => ssStates[pageNumber] === expected),
+    JSON.stringify(Object.fromEntries(Object.keys(closedFixtureStates).map((pageNumber) => [pageNumber, ssStates[pageNumber]]))));
+
+  // ---- Phase 1b: current closed page waits for its delayed final state ----
+  console.log("\n== Phase 1b: current closed page render settling ==");
+  const currentClosedPage = await browser.newPage();
+  attachPageDiagnostics(currentClosedPage);
+  await currentClosedPage.goto("https://moocs.iniad.org:8443/lesson/15", { waitUntil: "domcontentloaded" });
+  const currentClosedTimeline = await watch(currentClosedPage, 7000, 100);
+  const currentClosedFinal = currentClosedTimeline[currentClosedTimeline.length - 1];
+  const currentClosedCache = await currentClosedPage.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key) || "{}"),
+    ASSIGNMENT_STATE_STORAGE_KEY
+  );
+  const p15noneAt = firstAt(currentClosedTimeline, 15, "none");
+  const p15submitAt = firstAt(currentClosedTimeline, 15, "submit");
+  const p15attendanceAt = firstAt(currentClosedTimeline, 15, "attendance");
+  check("P15 current closed assignment waits for delayed 提出済み without false final state",
+    currentClosedFinal && currentClosedFinal.badges["15"] === "submitted" &&
+      p15noneAt === null && p15submitAt === null && p15attendanceAt === null &&
+      currentClosedCache["https://moocs.iniad.org:8443/lesson/15"]?.state === "submitted",
+    `none@${p15noneAt}ms submit@${p15submitAt}ms attendance@${p15attendanceAt}ms final=${currentClosedFinal && currentClosedFinal.badges["15"]}`);
+
+  await currentClosedPage.reload({ waitUntil: "domcontentloaded" });
+  const currentClosedWarmTimeline = await watch(currentClosedPage, 3200, 50);
+  const currentClosedWarmFirst = currentClosedWarmTimeline[0];
+  check("P15 warm reload preserves the correct submitted cache without pending regression",
+    currentClosedWarmFirst && currentClosedWarmFirst.badges["15"] === "submitted" &&
+      currentClosedWarmTimeline.every((sample) => sample.badges["15"] === "submitted"),
+    `states=${JSON.stringify([...new Set(currentClosedWarmTimeline.map((sample) => sample.badges["15"]))])}`);
+
+  await currentClosedPage.evaluate((key) => {
+    const cache = JSON.parse(sessionStorage.getItem(key) || "{}");
+    cache[location.href] = { state: "submit", at: Date.now() };
+    sessionStorage.setItem(key, JSON.stringify(cache));
+  }, ASSIGNMENT_STATE_STORAGE_KEY);
+  await currentClosedPage.reload({ waitUntil: "domcontentloaded" });
+  const currentClosedStaleTimeline = await watch(currentClosedPage, 7000, 50);
+  const currentClosedStaleFirst = currentClosedStaleTimeline[0];
+  const currentClosedStaleFinal = currentClosedStaleTimeline[currentClosedStaleTimeline.length - 1];
+  check("P15 warm reload clears only a stale submit cache while awaiting delayed submitted state",
+    currentClosedStaleFirst && currentClosedStaleFirst.badges["15"] === "pending" &&
+      firstAt(currentClosedStaleTimeline, 15, "pending") !== null &&
+      currentClosedStaleTimeline.every((sample) =>
+        sample.badges["15"] === "pending" || sample.badges["15"] === "submitted") &&
+      firstAt(currentClosedStaleTimeline, 15, "submit") === null &&
+      firstAt(currentClosedStaleTimeline, 15, "none") === null &&
+      currentClosedStaleFinal && currentClosedStaleFinal.badges["15"] === "submitted",
+    `first=${currentClosedStaleFirst && currentClosedStaleFirst.badges["15"]} pending@${firstAt(currentClosedStaleTimeline, 15, "pending")}ms submit@${firstAt(currentClosedStaleTimeline, 15, "submit")}ms none@${firstAt(currentClosedStaleTimeline, 15, "none")}ms final=${currentClosedStaleFinal && currentClosedStaleFinal.badges["15"]}`);
+  await currentClosedPage.close();
 
   // ---- Phase 2: warm reload ----
   console.log("\n== Phase 2: warm reload (instant display from cache) ==");
@@ -353,7 +480,9 @@ let browser = null;
     first2.badges["3"] === "submit" && first2.badges["4"] === "submitted" &&
     first2.badges["5"] === "attendance" && first2.badges["6"] === "none" &&
     first2.badges["7"] === "submit" && first2.badges["8"] === "submit" &&
-    first2.badges["9"] === "submit" && first2.badges["10"] === "none",
+    first2.badges["9"] === "submit" && first2.badges["10"] === "none" &&
+    first2.badges["11"] === "none" && first2.badges["12"] === "submit" &&
+    first2.badges["13"] === "submitted" && first2.badges["14"] === "submitted",
     `at ${first2 && first2.at}ms: ${JSON.stringify(first2 && first2.badges)}`);
   check("warm: cached states render within 1 second",
     first2 && first2.at < 1000, `${first2 && first2.at}ms`);
@@ -364,6 +493,7 @@ let browser = null;
 
   // ---- Phase 2b: submit-triggered timer survives passive focus events ----
   console.log("\n== Phase 2b: submit timer vs focus/visibility ==");
+  await waitForLessonRequestQuiescence(1200, 10000);
   const t2b = Date.now();
   setTimeout(() => { state.p1 = "submitted"; }, 1200);
   await page.evaluate(() => {
@@ -383,7 +513,7 @@ let browser = null;
   await page.waitForFunction(() => {
     const button = document.querySelector(".iniadpp-assignment-dashboard__refresh");
     return button && !button.disabled;
-  }, { timeout: 25000 });
+  }, { timeout: 35000 });
   const afterCurrentSubmit = await sampleDashboard(page);
   check("submit timer: current page is refreshed from server state",
     afterCurrentSubmit.badges["1"] === "submitted",
@@ -422,7 +552,7 @@ let browser = null;
   await page.waitForFunction(() => {
     const button = document.querySelector(".iniadpp-assignment-dashboard__refresh");
     return button && !button.disabled;
-  }, { timeout: 25000 });
+  }, { timeout: 35000 });
   const tl3 = await tl3Promise;
   const p3newAt = firstAt(tl3, 3, "submitted");
   const p3pending = tl3.some((s) => s.badges["3"] === "pending");
@@ -456,7 +586,7 @@ let browser = null;
   await page.waitForFunction(() => {
     const button = document.querySelector(".iniadpp-assignment-dashboard__refresh");
     return button && !button.disabled;
-  }, { timeout: 25000 });
+  }, { timeout: 35000 });
 
   // ---- Phase 4b: action timer during an active scan schedules exactly one trailing scan ----
   console.log("\n== Phase 4b: submit action schedules one trailing refresh ==");
@@ -491,7 +621,7 @@ let browser = null;
   await page.waitForFunction(() => {
     const button = document.querySelector(".iniadpp-assignment-dashboard__refresh");
     return button && !button.disabled;
-  }, { timeout: 25000 });
+  }, { timeout: 35000 });
   state.failPage = null;
   const failureUi = await sampleRefreshUi(page);
   check("refresh failure: explicit previous-results notice",
@@ -505,6 +635,8 @@ let browser = null;
     fin5.badges["5"] === "attendance" && fin5.badges["6"] === "none" &&
     fin5.badges["7"] === "submit" && fin5.badges["8"] === "submit" &&
     fin5.badges["9"] === "submit" && fin5.badges["10"] === "none" &&
+    fin5.badges["11"] === "none" && fin5.badges["12"] === "submit" &&
+    fin5.badges["13"] === "submitted" && fin5.badges["14"] === "submitted" &&
     fin5.counts.pending === "0",
     JSON.stringify(fin5.badges));
 
@@ -531,7 +663,7 @@ let browser = null;
   await page.waitForFunction(() => {
     const button = document.querySelector(".iniadpp-assignment-dashboard__refresh");
     return button && !button.disabled;
-  }, { timeout: 25000 });
+  }, { timeout: 35000 });
   state.failPage = null;
   const noPreviousFailureUi = await sampleRefreshUi(page);
   const fin6 = await sampleDashboard(page);

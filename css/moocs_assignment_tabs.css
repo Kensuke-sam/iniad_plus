@@ -50,13 +50,6 @@
   margin: 0;
 }
 
-.iniadpp-assignment-dashboard__head p {
-  color: var(--iniad-text-sub);
-  font-size: 12px;
-  line-height: 1.4;
-  margin: 2px 0 0;
-}
-
 .iniadpp-assignment-dashboard__refresh {
   align-items: center;
   background: #ffffff;

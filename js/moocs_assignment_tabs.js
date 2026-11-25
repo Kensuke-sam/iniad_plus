@@ -18,7 +18,7 @@ const iniadppAssignmentStateClasses = [
 const iniadppLessonClassificationCache = {};
 const iniadppLessonClassificationGeneration = {};
 let iniadppAssignmentScanVersion = 0;
-const iniadppAssignmentStateStorageKey = "iniadppAssignmentStates:v4";
+const iniadppAssignmentStateStorageKey = "iniadppAssignmentStates:v6";
 const iniadppAssignmentStateCacheTtlMs = 30 * 60 * 1000;
 const iniadppLessonFetchTimeoutMs = 15 * 1000;
 const iniadppRenderedInspectionQuietMs = 1200;
@@ -60,7 +60,13 @@ function markMoocsAssignmentTabs(forceReload){
         // 前回の判定結果があれば先に表示し、再確認のたびに「確認中」へ戻さない
         const cachedState = readCachedMoocsAssignmentState(item.url);
         const renderedState = getReusableMoocsAssignmentState(item.$li.attr("data-iniadpp-assignment-state"));
-        const previousState = cachedState || renderedState;
+        let previousState = cachedState || renderedState;
+        if(previousState === "submit" &&
+            isCurrentMoocsLessonUrl(item.url) &&
+            hasMoocsClosedSubmissionScopes(document)){
+            // 受付終了へ切り替わった直後だけ、以前の「未提出」を初期表示に再利用しない。
+            previousState = "";
+        }
         item.hadPreviousState = !!previousState;
         updateMoocsLessonTabState(item, previousState || "pending");
     });
@@ -78,15 +84,24 @@ function markMoocsAssignmentTabs(forceReload){
                     return { ok: true, stale: true };
                 }
                 const state = kind || "none";
+                const isClosedCurrentPageSettling = state === "none" &&
+                    isCurrentMoocsLessonUrl(item.url) &&
+                    hasMoocsClosedSubmissionScopes(document);
                 const isWaitingForCurrentPageRendering = forceReload !== true &&
                     isCurrentMoocsLessonUrl(item.url) &&
                     !iniadppCurrentLessonSettled &&
                     (state === "attendance" ||
                         state === "submitted" ||
-                        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document)));
+                        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document)) ||
+                        isClosedCurrentPageSettling);
                 if(isWaitingForCurrentPageRendering){
                     // 現在ページは遅延描画で提出状態が変わることがある。
                     // 明示的な未提出状態でない色付き判定は、watcher の最終確認まで前回結果または「確認中」を維持する。
+                    if(isClosedCurrentPageSettling && item.state === "submit"){
+                        // 受付終了前の「未提出」だけを捨て、正しい提出済み・対象外キャッシュは維持する。
+                        updateMoocsLessonTabState(item, "pending");
+                        updateMoocsAssignmentDashboard();
+                    }
                     return { ok: true, pendingRenderedVerification: true };
                 }
                 // 現在ページは動的描画が終わる前の判定を保存すると誤りが固定されるため、描画静止後の watcher に任せる
@@ -382,13 +397,28 @@ function applyCurrentMoocsLessonState(url, isFinal){
         return false;
     }
     const state = kind || "none";
+    const isClosedCurrentPageSettling = state === "none" && hasMoocsClosedSubmissionScopes(document);
+    const $dashboard = $("#" + iniadppAssignmentDashboardId);
+    const tabItems = $dashboard.data("tabItems") || [];
     if(isFinal !== true && (
         state === "attendance" ||
         state === "submitted" ||
-        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document))
+        (state === "submit" && !hasMoocsDefinitiveUnsubmittedState(document)) ||
+        isClosedCurrentPageSettling
     )){
         // 遅延描画の途中結果を先に出すと、出席・未提出・提出済みの色が現れたり消えたりする。
         // 明示的な未提出以外の色付き判定は監視上限まで確定を保留する。
+        if(isClosedCurrentPageSettling){
+            let resetStaleSubmit = false;
+            tabItems.forEach(function(item){
+                if(item.url !== url || item.state !== "submit") return;
+                updateMoocsLessonTabState(item, "pending");
+                resetStaleSubmit = true;
+            });
+            if(resetStaleSubmit){
+                updateMoocsAssignmentDashboard();
+            }
+        }
         return false;
     }
     // 明示的な未提出は先に確定できる。それ以外は最終判定だけ保存する。
@@ -396,8 +426,6 @@ function applyCurrentMoocsLessonState(url, isFinal){
         writeCachedMoocsAssignmentState(url, state);
     }
 
-    const $dashboard = $("#" + iniadppAssignmentDashboardId);
-    const tabItems = $dashboard.data("tabItems") || [];
     let touched = false;
 
     tabItems.forEach(function(item){
@@ -468,7 +496,6 @@ function buildMoocsAssignmentDashboardHtml(){
         '    <div class="iniadpp-assignment-dashboard__head">',
         '        <div>',
         '            <h2>課題・出席まとめ</h2>',
-        '            <p>この講義のページ別チェック</p>',
         '        </div>',
         '        <button type="button" class="iniadpp-assignment-dashboard__refresh" title="再読み込み" aria-label="課題・出席まとめを再読み込み">',
         '            <i class="fa fa-refresh" aria-hidden="true"></i>',
@@ -617,6 +644,13 @@ if(window.location.hostname === "moocs.iniad.org"){
         scheduleMoocsAssignmentAutoRefresh(2500, { ensureTrailingScan: true });
     });
 
+    $(document).on("input change", ".problem-contents input, .problem-contents textarea, .problem-contents select", function(){
+        if(isMoocsIgnoredElement(this) || !hasMoocsSavedAnswerContainer(document)) return;
+        delete document.__iniadppSavedAnswerState;
+        watchCurrentMoocsLessonRendering();
+        scheduleMoocsAssignmentAutoRefresh(2500, { ensureTrailingScan: true });
+    });
+
     $(document).on("click", "button, input[type='button'], input[type='submit'], a.btn", function(){
         if(isMoocsIgnoredElement(this)) return;
 
@@ -691,7 +725,7 @@ function isCurrentMoocsLessonUrl(url){
 
 function classifyMoocsLessonTab(url, forceReload){
     const isCurrentLesson = isCurrentMoocsLessonUrl(url);
-    if(isCurrentLesson && forceReload !== true){
+    if(isCurrentLesson && forceReload !== true && !hasMoocsSavedAnswerContainer(document)){
         return Promise.resolve(classifyMoocsLessonDocument(document));
     }
 
@@ -716,17 +750,27 @@ function classifyMoocsLessonTab(url, forceReload){
     })
         .then(function(response){
             if(!response.ok) throw new Error("HTTP " + response.status);
+            assertMoocsInspectionResponseUrl(response, url);
             return response.text();
         })
-        .then(function(html){
+        .then(async function(html){
             const parsed = new DOMParser().parseFromString(html, "text/html");
+            const savedAnswerState = await inspectMoocsSavedAnswers(parsed, url);
+            if(savedAnswerState !== null){
+                if(isCurrentLesson && iniadppLessonClassificationGeneration[url] === generation){
+                    document.__iniadppSavedAnswerState = savedAnswerState;
+                }
+                return savedAnswerState;
+            }
             const staticKind = classifyMoocsLessonDocument(parsed);
             const staticText = normalizeMoocsText(getMoocsLessonMainText(parsed));
+            const staticClosedWithSubmissionScopes = hasMoocsClosedSubmissionScopes(parsed);
             // 色付き状態は静的HTMLだけで即決せず、遅延描画が終わった状態で確定する。
-            // none は全資料ページを iframe 監視しないよう、静的DOMに対象controlがある場合だけ検証する。
+            // none は全資料ページを iframe 監視しないよう、静的DOMに対象controlか受付終了中の提出欄がある場合だけ検証する。
             const needsStableRenderedVerification = staticKind === "attendance" ||
                 staticKind === "submitted" ||
-                (!staticKind && !isMoocsResubmissionAssignment(staticText) && hasMoocsOpenQuestionControl(parsed));
+                (!staticKind && !isMoocsResubmissionAssignment(staticText) &&
+                    (hasMoocsOpenQuestionControl(parsed) || staticClosedWithSubmissionScopes));
 
             if(needsStableRenderedVerification){
                 // 直近の確定結果と静的判定が一致するページは、遅延描画で結果が変わる見込みが薄いため
@@ -1031,8 +1075,9 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
         iframe.src = url;
         iframe.style.cssText = [
             "position:absolute",
-            "width:1px",
-            "height:1px",
+            // 実ページ相当の幅を持たせ、警告や操作要素のゼロサイズ判定をviewport幅で歪めない。
+            "width:1024px",
+            "height:768px",
             "left:-9999px",
             "top:-9999px",
             "border:0",
@@ -1050,9 +1095,27 @@ function inspectMoocsLessonTabRenderedFrame(url, onLateUpdate, isStale, onComple
 
 function classifyMoocsLessonDocument(doc){
     const text = normalizeMoocsText(getMoocsLessonMainText(doc));
+    const isClosed = isMoocsClosedAssignment(doc);
 
     if(isMoocsResubmissionAssignment(text)){
         return "";
+    }
+
+    // MOOCs のテキスト回答は提出ボタンが残り、完了の文字を表示しない。
+    // 入力の有無では決めず、正規の読み取りAPIで確認した保存状態を使う。
+    if(hasMoocsSavedAnswerContainer(doc)){
+        return typeof doc.__iniadppSavedAnswerState === "string" ? doc.__iniadppSavedAnswerState : "unknown";
+    }
+
+    if(isClosed){
+        const closedScopeTextMemo = new Map();
+        const closedScopes = collectMoocsSubmissionScopes(doc, closedScopeTextMemo);
+        const allClosedScopesSubmitted = closedScopes.length > 0 && closedScopes.every(function(scope){
+            return hasMoocsSubmittedMark(getMoocsComparableTextMemoized(scope, closedScopeTextMemo));
+        });
+
+        // 受付終了自体は提出の証拠ではない。提出欄に明示的な完了表示がある場合だけ提出済みにする。
+        return allClosedScopesSubmitted ? "submitted" : "";
     }
 
     if(isMoocsAttendanceAssignment(text)){
@@ -1077,6 +1140,158 @@ function classifyMoocsLessonDocument(doc){
     });
 
     return allSubmitted ? "submitted" : "submit";
+}
+
+function hasMoocsSavedAnswerContainer(doc){
+    if(!doc || typeof doc.querySelectorAll !== "function") return false;
+    if(isMoocsAttendanceAssignment(getMoocsLessonMainText(doc)) ||
+        isMoocsResubmissionAssignment(getMoocsLessonMainText(doc))) return false;
+    return doc.querySelectorAll(".problem-container[data-urlprefix]").length > 0;
+}
+
+function assertMoocsInspectionResponseUrl(response, expectedUrl){
+    if(!response.url) return;
+    const actual = new URL(response.url, expectedUrl);
+    const expected = new URL(expectedUrl);
+    if(actual.origin !== expected.origin || actual.pathname !== expected.pathname){
+        throw new Error("MOOCs inspection was redirected away from the requested page.");
+    }
+}
+
+async function readMoocsInspectionJson(url){
+    const response = await fetch(url, {
+        credentials: "include",
+        cache: "no-store",
+        headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+        signal: createMoocsFetchTimeoutSignal(iniadppLessonFetchTimeoutMs)
+    });
+    if(!response.ok) throw new Error("HTTP " + response.status);
+    assertMoocsInspectionResponseUrl(response, url);
+    let data;
+    try {
+        data = await response.json();
+    } catch(error){
+        // API本文や回答内容を例外ログへ出さない。
+        throw new Error("MOOCs returned invalid answer information.");
+    }
+    if(!data || typeof data !== "object" || Array.isArray(data)){
+        throw new Error("MOOCs returned invalid answer information.");
+    }
+    return data;
+}
+
+async function inspectMoocsSavedAnswers(doc, lessonUrl){
+    if(!hasMoocsSavedAnswerContainer(doc)) return null;
+    const containers = Array.from(doc.querySelectorAll(".problem-container[data-urlprefix]"));
+    const results = await Promise.all(containers.map(async function(container){
+        const prefix = new URL(container.getAttribute("data-urlprefix"), lessonUrl);
+        if(prefix.origin !== new URL(lessonUrl).origin ||
+            !/^\/assignments\//.test(prefix.pathname) || prefix.search || prefix.hash){
+            throw new Error("Invalid MOOCs answer endpoint.");
+        }
+        const base = prefix.href.replace(/\/$/, "");
+        const status = await readMoocsInspectionJson(base + "/status");
+        if(["open", "closed", "graded"].indexOf(status.status) === -1){
+            throw new Error("MOOCs answer status is unavailable.");
+        }
+        const problemUrl = new URL(base + "/problem");
+        const lang = container.getAttribute("data-lang");
+        if(lang) problemUrl.searchParams.set("lang", lang);
+        const [problem, answers] = await Promise.all([
+            readMoocsInspectionJson(problemUrl.href),
+            readMoocsInspectionJson(base + "/answers")
+        ]);
+        if(typeof problem.html !== "string") throw new Error("MOOCs problem definition is unavailable.");
+        const problemDoc = new DOMParser().parseFromString(problem.html, "text/html");
+        const fields = Array.from(problemDoc.querySelectorAll("input[name], textarea[name], select[name]"))
+            .filter(function(field){
+                return !field.closest(".nosubmit") &&
+                    ["hidden", "button", "submit", "reset"].indexOf((field.getAttribute("type") || "").toLowerCase()) === -1;
+            });
+        if(!fields.length) throw new Error("MOOCs answer fields are unavailable.");
+        let saved = areMoocsProblemAnswersSaved(fields, answers);
+        if(saved && isCurrentMoocsLessonUrl(lessonUrl)){
+            const liveContainers = Array.from(document.querySelectorAll(".problem-container[data-urlprefix]"));
+            const live = liveContainers.find(function(element){
+                return element.getAttribute("data-urlprefix") === container.getAttribute("data-urlprefix");
+            });
+            if(live){
+                const liveFields = Array.from(live.querySelectorAll(".problem-contents input[name], .problem-contents textarea[name], .problem-contents select[name]"));
+                saved = doMoocsProblemValuesMatch(liveFields, answers);
+            }
+        }
+        return saved ? "submitted" : (status.status === "open" ? "submit" : "none");
+    }));
+    if(results.some(function(state){ return state === "submit"; })) return "submit";
+    return results.every(function(state){ return state === "submitted"; }) ? "submitted" : "none";
+}
+
+function areMoocsProblemAnswersSaved(fields, answers){
+    return fields.every(function(field){
+        const name = field.getAttribute("name");
+        if(!Object.prototype.hasOwnProperty.call(answers, name)) return false;
+        const answer = answers[name];
+        if(!answer || typeof answer !== "object") return false;
+        if((field.getAttribute("type") || "").toLowerCase() === "file"){
+            return !!(answer.file && answer.file.filename && answer.file.filetype);
+        }
+        return typeof answer.data === "string" && answer.data.trim().length > 0;
+    });
+}
+
+function doMoocsProblemValuesMatch(fields, answers){
+    const names = new Set();
+    return fields.filter(function(field){
+        return !field.closest(".nosubmit") &&
+            ["hidden", "button", "submit", "reset", "file"].indexOf((field.getAttribute("type") || "").toLowerCase()) === -1;
+    }).every(function(field){
+        const name = field.getAttribute("name");
+        if(names.has(name)) return true;
+        names.add(name);
+        const type = (field.getAttribute("type") || "").toLowerCase();
+        let value = field.value;
+        if(type === "radio" || type === "checkbox"){
+            const checked = fields.find(function(other){ return other.getAttribute("name") === name && other.checked; });
+            value = checked ? checked.value : "";
+        } else if(field.multiple && field.selectedOptions){
+            value = Array.from(field.selectedOptions).map(function(option){ return option.value; }).join(",");
+        }
+        return !!answers[name] && String(value || "").replace(/\r\n/g, "\n") ===
+            String(answers[name].data || "").replace(/\r\n/g, "\n");
+    });
+}
+
+function isMoocsClosedAssignment(doc){
+    if(!doc || typeof doc.querySelectorAll !== "function") return false;
+
+    const notices = doc.querySelectorAll([
+        ".alert",
+        ".alert-warning",
+        ".alert-danger",
+        ".callout",
+        "[role='alert']",
+        "[role='status']"
+    ].join(","));
+
+    for(let i = 0; i < notices.length; i++){
+        const notice = notices[i];
+        // 検証用iframe自体は意図的に非表示なので、要素自身と文書内祖先の可視性だけを見る。
+        if(!isMoocsVisibleElement(notice, { skipCheckVisibility: true })) continue;
+        if(hasMoocsClosedAssignmentText(getMoocsComparableText(notice))){
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasMoocsClosedSubmissionScopes(doc){
+    return isMoocsClosedAssignment(doc) && collectMoocsSubmissionScopes(doc).length > 0;
+}
+
+function hasMoocsClosedAssignmentText(text){
+    const normalizedText = normalizeMoocsText(text);
+    return /^(?:[!！⚠]\s*)*現在(?:\s*は)?\s*[、,:：]?\s*(?:回答|解答|提出|送信)\s*を\s*受け付けて\s*いません(?:[。.!！]|$)/.test(normalizedText);
 }
 
 function hasMoocsSubmittedMark(text){
@@ -1248,10 +1463,19 @@ function isMoocsActionableControl(control){
     if(control.disabled === true || control.hasAttribute("disabled")) return false;
     if(String(control.getAttribute("aria-disabled") || "").toLowerCase() === "true") return false;
 
-    const ownerDocument = control.ownerDocument;
+    return isMoocsVisibleElement(control, { requirePointerInteraction: true });
+}
+
+function isMoocsVisibleElement(element, options){
+    if(!element || isMoocsIgnoredElement(element)) return false;
+
+    const requirePointerInteraction = !!(options && options.requirePointerInteraction);
+    const skipCheckVisibility = !!(options && options.skipCheckVisibility);
+    const ownerDocument = element.ownerDocument;
     const view = ownerDocument && ownerDocument.defaultView;
-    const isRenderedDocument = !!(view && ownerDocument.documentElement && ownerDocument.documentElement.contains(control));
-    let current = control;
+    const isRenderedDocument = !!(view && ownerDocument.documentElement && ownerDocument.documentElement.contains(element));
+    let current = element;
+
     while(current && current.nodeType === 1){
         if(current.hidden === true || current.inert === true || current.hasAttribute("hidden") || current.hasAttribute("inert")){
             return false;
@@ -1268,7 +1492,7 @@ function isMoocsActionableControl(control){
             inlineStyle.visibility === "collapse" ||
             inlineStyle.contentVisibility === "hidden" ||
             parseFloat(inlineStyle.opacity) === 0 ||
-            inlineStyle.pointerEvents === "none"
+            (requirePointerInteraction && inlineStyle.pointerEvents === "none")
         )){
             return false;
         }
@@ -1281,12 +1505,12 @@ function isMoocsActionableControl(control){
                 computedStyle.visibility === "collapse" ||
                 computedStyle.contentVisibility === "hidden" ||
                 (!Number.isNaN(opacity) && opacity <= 0) ||
-                computedStyle.pointerEvents === "none" ||
+                (requirePointerInteraction && computedStyle.pointerEvents === "none") ||
                 isMoocsFullyClippedStyle(computedStyle)){
                 return false;
             }
 
-            if(current !== control && computedStyle.display !== "contents" && typeof current.getBoundingClientRect === "function"){
+            if(current !== element && computedStyle.display !== "contents" && typeof current.getBoundingClientRect === "function"){
                 const bounds = current.getBoundingClientRect();
                 const clipsOverflow = [computedStyle.overflow, computedStyle.overflowX, computedStyle.overflowY]
                     .some(function(value){ return value === "hidden" || value === "clip"; });
@@ -1298,11 +1522,11 @@ function isMoocsActionableControl(control){
     }
 
     // DOMParser で作った静的文書にはレイアウト情報がないため、属性・inline style の確認だけに留める。
-    // 現在ページと描画確認iframeでは、実際に面積を持つ可視コントロールだけを操作可能とみなす。
+    // 現在ページと描画確認iframeでは、実際に面積を持つ要素だけを可視とみなす。
     if(isRenderedDocument){
-        if(typeof control.checkVisibility === "function"){
+        if(!skipCheckVisibility && typeof element.checkVisibility === "function"){
             try {
-                if(!control.checkVisibility({
+                if(!element.checkVisibility({
                     checkOpacity: true,
                     checkVisibilityCSS: true,
                     opacityProperty: true,
@@ -1315,8 +1539,8 @@ function isMoocsActionableControl(control){
             }
         }
 
-        if(typeof control.getClientRects !== "function") return false;
-        const rects = control.getClientRects();
+        if(typeof element.getClientRects !== "function") return false;
+        const rects = element.getClientRects();
         let hasPositiveArea = false;
         for(let i = 0; rects && i < rects.length; i++){
             if(rects[i].width > 0 && rects[i].height > 0){
@@ -1326,8 +1550,8 @@ function isMoocsActionableControl(control){
         }
         if(!hasPositiveArea) return false;
 
-        if(typeof control.getBoundingClientRect === "function"){
-            const bounds = control.getBoundingClientRect();
+        if(typeof element.getBoundingClientRect === "function"){
+            const bounds = element.getBoundingClientRect();
             if(!bounds || bounds.width <= 0 || bounds.height <= 0) return false;
         }
     }
