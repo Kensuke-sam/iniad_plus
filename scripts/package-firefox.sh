@@ -33,6 +33,8 @@ rm -f "$STAGE_DIR/js/service-worker.js"
 # manifest からもコードからも参照されないファイルは AMO 審査の指摘要因になるため同梱しない
 rm -rf "$STAGE_DIR/lib/fontawesome"
 rm -f "$STAGE_DIR/css/theme01.css"
+# 回答ガードは実 MOOCs での検証が済むまで manifest に登録しないため同梱しない
+rm -f "$STAGE_DIR/js/moocs_answer_guard.js"
 
 mkdir -p "$STAGE_DIR/img"
 python3 - "$ROOT_DIR" "$STAGE_DIR" <<'PY'

@@ -4,12 +4,12 @@
 - external-brain lane: `school_or_course_repo`
 - seed status: `seeded`
 - detected stack: browser extension (Chrome Manifest V3 / Firefox package scripts)
-- verified current state: local repository and generated package artifacts checked on 2026-07-04; no live store submission status verified
+- verified current state: v1.4.9 assignment-status fix checked on real MOOCs (enshu4-07) in the user's Chrome with the unpacked web store package on 2026-11-25; Chrome/Firefox v1.4.9 ZIPs regenerated locally; no live store submission status verified
 
 ## Stable Seed Signals
 
 - `README.md` (doc): heading=INIAD Plus - MOOCs PDF Helper. <div align="center"> <img src="img/iniadpp128.png" width="96" alt="INIAD Plus icon"> **INIAD MOOCs の認可済み講義スライドを学習用 PDF として保存しやすくする Chrome / Firefox 拡張** [![GitHub](https://img.shields.io/badge/source-GitHub-181717?logo=github)](https://github.com/Kensuke-sam/iniad_plus)
-- `manifest.json` (manifest:web): name=INIAD Plus - MOOCs PDF Helper; version=1.4.7; description includes PDF 作成, 課題・出席確認, Drive 資料検索
+- `manifest.json` (manifest:web): name=INIAD Plus - MOOCs PDF Helper; version=1.4.9; description includes PDF 作成, 課題・出席確認, Drive 資料検索
 - `docs/chrome-web-store.md` (doc): heading=Chrome Web Store 提出メモ. Chrome Web Store 向け ZIP は「印刷用 PDF 作成補助」「課題・出席まとめ」「Drive 資料検索」の 3 機能に絞り、権限なし・background なしの構成にする。
 - `docs/firefox-addons.md` (doc): heading=Firefox Add-ons 提出メモ. INIAD Plus を Firefox Add-ons に提出するときに、そのまま転記しやすい情報をまとめたメモです。 - 拡張機能名: `INIAD Plus - MOOCs PDF Helper` - 短縮名: `INIAD Plus` - 推奨カテゴリ: `教育` または `仕事効率化`
 - `docs/privacy.md` (doc): heading=プライバシー説明. Drive 資料検索はユーザークリック時だけ Google Drive 検索 URL を開き、拡張機能は Drive 内容や検索結果を読み取らず保存・送信もしない。
@@ -19,6 +19,7 @@
 - 2026-07-03: Restored the course-list `ドライブで探す` path for packaged builds by including `js/drive_buttons.js` in the Web Store package, hardening insertion after course buttons, bumping manifest version to 1.4.6, and regenerating local Chrome/Firefox ZIPs for verification.
 - 2026-07-04: Changed assignment summary checks to use fresh scans and rendered hidden-frame inspection for pages whose static HTML still looks unsubmitted, so dynamic `アップロード済み` status can be detected without manually opening each tab.
 - 2026-07-09: Sped up assignment summary reflection: last known states persist in sessionStorage and show instantly instead of 確認中, hidden-frame inspection resolves on DOM-quiet (1.2s) with a 4.5s late-correction watch instead of always waiting 4.5s, iframe concurrency capped at 3 with early slot release, stale-generation inspections are cancelled, pageshow refresh limited to bfcache restores with a 10s deferring throttle, and the current page gets its own render-settle watcher so premature verdicts are not cached.
+- 2026-11-25: The user's Chrome was still running the July v1.4.7 store build (sessionStorage key `:v2`), which marked submitted text-answer assignments as not submitted or unmarked because MOOCs lesson HTML always contains hidden templates such as 「現在回答を受け付けていません」. v1.4.9 judges saved answers through the same-origin `/assignments/<prefix>/status`, `/problem`, `/answers` reads; verified live that enshu4-07 pages 3/5/7 show submitted consistently. `js/moocs_answer_guard.js` (XHR guard that strips empty answer fields) is kept out of manifest and both packages until it is verified on real MOOCs without writing to real coursework. Store docs updated to v1.4.9 with the answer-status read disclosed.
 
 ## Next Actions
 

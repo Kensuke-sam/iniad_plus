@@ -1,9 +1,9 @@
 {
     "name": "INIAD Plus - MOOCs PDF Helper",
     "short_name": "INIAD Plus",
-    "version": "1.4.8",
+    "version": "1.4.9",
     "manifest_version": 3,
-    "description": "INIAD MOOCs \u306e\u8b1b\u7fa9\u30b9\u30e9\u30a4\u30c9\u306e\u5b66\u7fd2\u7528 PDF \u4f5c\u6210\u3001\u8ab2\u984c\u30fb\u51fa\u5e2d\u78ba\u8a8d\u3001Drive \u8cc7\u6599\u691c\u7d22\u3092\u88dc\u52a9\u3059\u308b\u975e\u516c\u5f0f Chrome \u62e1\u5f35\u3067\u3059",
+    "description": "INIAD MOOCs の講義スライドの学習用 PDF 作成、課題・出席確認、Drive 資料検索を補助する非公式 Chrome 拡張です",
     "homepage_url": "https://github.com/Kensuke-sam/iniad_plus",
     "permissions": [
         "storage"

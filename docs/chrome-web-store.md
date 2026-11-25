@@ -23,7 +23,7 @@ INIAD Plus - MOOCs PDF Helper は、INIAD MOOCs の講義ページでの学習�
 
 1. 学習用 PDF 作成補助: 講義ページに PDF 作成ボタンを追加し、利用者が正当に閲覧できる埋め込み Google Slides を Chrome の印刷機能で PDF 化しやすい印刷用ページに整えます。PDF の保存は、利用者自身が Chrome の印刷ダイアログから行います。
 
-2. 課題・出席まとめ: 講義ページのタブ（ページ一覧）を「出席 / 未提出 / 提出済み」に自動分類して色分けし、講義内の課題・出席ページを一覧できるまとめを表示します。分類のために、同じ講義内のページ（moocs.iniad.org の同一オリジン）を利用者のログイン状態で取得または非表示フレームで読み込み、ブラウザ内でのみ解析します。取得した内容は表示補助にのみ使用し、外部送信しません。ページ内容自体は保存せず、再表示を速くするために分類結果ラベル（出席 / 未提出 / 提出済み）のみをブラウザの sessionStorage に一時保存します（タブを閉じると消え、自動失効します）。
+2. 課題・出席まとめ: 講義ページのタブ（ページ一覧）を「出席 / 未提出 / 提出済み」に自動分類して色分けし、講義内の課題・出席ページを一覧できるまとめを表示します。分類のために、同じ講義内のページ（moocs.iniad.org の同一オリジン）を利用者のログイン状態で取得または非表示フレームで読み込み、ブラウザ内でのみ解析します。課題ページでは、回答が保存されているかを確かめるために、同じ moocs.iniad.org から回答の受付状況と保存済みの回答も読み取ります。取得した内容は表示補助にのみ使用し、外部送信しません。ページ内容や回答の内容は保存せず、再表示を速くするために分類結果ラベル（出席 / 未提出 / 提出済み）のみをブラウザの sessionStorage に一時保存します（タブを閉じると消え、自動失効します）。
 
 3. Drive 資料検索: コース一覧に「ドライブで探す」ボタンを追加します。利用者がクリックしたときだけ、コース年度とコース名を含む Google Drive の検索 URL を新しいタブで開きます。拡張機能は Google Drive の内容を読み取らず、検索結果も保存・送信しません。
 
@@ -78,10 +78,10 @@ Chrome Web Store 向け ZIP には `debugger`、`downloads`、`storage`、backgr
 - 分析、広告、トラッキングは行いません
 - 拡張機能は提出版では `chrome.storage.local` を使いません
 - Google Slides の表示内容は PDF 作成時にブラウザ内でのみ処理します
-- 課題・出席まとめは、タブ分類のために同じ講義内のページ（moocs.iniad.org の同一オリジン）を利用者のログイン状態で取得または非表示フレームで読み込み、ブラウザ内でのみ解析します。取得内容は表示補助にのみ使用し、外部送信しません。ページ内容自体は保存せず、分類結果ラベルのみを sessionStorage に一時保存します（タブを閉じると消えます）
+- 課題・出席まとめは、タブ分類のために同じ講義内のページ（moocs.iniad.org の同一オリジン）を利用者のログイン状態で取得または非表示フレームで読み込み、ブラウザ内でのみ解析します。課題ページでは、回答が保存されているかを確かめるために、同じ moocs.iniad.org から回答の受付状況と保存済みの回答も読み取ります。取得内容は表示補助にのみ使用し、外部送信しません。ページ内容や回答の内容は保存せず、分類結果ラベルのみを sessionStorage に一時保存します（タブを閉じると消えます）
 - Drive 資料検索は、利用者が「ドライブで探す」ボタンをクリックしたときだけ Google Drive の検索ページを開きます。検索 URL にはコース年度とコース名が含まれます。拡張機能は Google Drive の内容や検索結果を読み取らず、保存・送信もしません
 - 作成された PDF は利用者のローカル環境に保存され、開発者は取得しません
-- Chrome Web Store User Data Policy の Limited Use requirements に従い、取得したページ内容は学習用 PDF 作成補助、課題・出席まとめの表示、Drive 資料検索ボタンの作成にのみ使用します
+- Chrome Web Store User Data Policy の Limited Use requirements に従い、取得したページ内容と回答の保存状況は学習用 PDF 作成補助、課題・出席まとめの表示、Drive 資料検索ボタンの作成にのみ使用します
 
 ## 審査担当者向けの動作確認手順
 
@@ -100,7 +100,7 @@ Note: When a lecture contains multiple Slides files and you use the bulk button,
 Assignment/attendance summary flow:
 1. Log in to INIAD MOOCs and open a lecture page that has numbered lesson tabs (pagination).
 2. The extension adds an "課題・出席まとめ" panel near the top of the lecture content and color-codes the lesson tabs as attendance / not submitted / submitted.
-3. For this classification, the extension fetches or loads other pages of the same lecture from moocs.iniad.org (same origin, using the user's existing session), parses them inside the browser only, and does not store or transmit the page content anywhere. Only the derived per-page status labels (attendance / not submitted / submitted) are cached temporarily in the site's sessionStorage to speed up redisplay; they expire automatically, are cleared when the tab closes, and never leave the browser.
+3. For this classification, the extension fetches or loads other pages of the same lecture from moocs.iniad.org (same origin, using the user's existing session), parses them inside the browser only, and does not store or transmit the page content anywhere. For lesson pages with answer forms, it also reads the user's own answer status from the same origin (whether the assignment is open and whether answers are saved) to decide between not submitted and submitted; answer contents are compared in memory only and are never stored or transmitted. Only the derived per-page status labels (attendance / not submitted / submitted) are cached temporarily in the site's sessionStorage to speed up redisplay; they expire automatically, are cleared when the tab closes, and never leave the browser.
 
 Drive search shortcut flow:
 1. Log in to INIAD MOOCs and open the course list at https://moocs.iniad.org/courses.
@@ -120,7 +120,7 @@ The Chrome Web Store package requests no extension permissions, has no backgroun
 ```text
 INIAD Plus - MOOCs PDF Helper has been updated for review clarity and minimum permissions.
 
-Changes in v1.4.8:
+Changes in v1.4.9:
 - The Chrome Web Store package now includes only the three features described in the listing: the print-ready PDF helper, the assignment/attendance summary for lecture pages, and the user-clicked Drive search shortcut.
 - The package requests no extension permissions.
 - debugger, downloads, storage, and the background service worker were removed from the Chrome Web Store package.
@@ -128,6 +128,7 @@ Changes in v1.4.8:
 - The assignment/attendance summary fetches or hidden-loads only pages of the same lecture from moocs.iniad.org (same origin) with the user's existing session, parses them locally in the browser, and never transmits page content. Only derived status labels are cached temporarily in the browser's sessionStorage and never leave the device.
 - Submitted-state checks were made fresh per scan, and dynamically rendered upload status is inspected without requiring the user to open the lesson tab manually.
 - Assignment and attendance labels now wait for the rendered lesson state to settle before showing a color, preventing transient false not-submitted, submitted, or attendance indicators.
+- Submitted text answers are now detected correctly. Instead of guessing from page text, the summary reads the user's own answer status from moocs.iniad.org (same origin), so submitted assignments no longer appear as not submitted or unmarked. Answer contents are compared in memory only and are never stored or transmitted.
 - The Drive search shortcut opens Google Drive only after the user clicks the button, and the extension does not read or store Drive search results.
 - The listing and privacy policy now explicitly state that the extension does not bypass login restrictions, access controls, paywalls, or download restrictions. It only works with content the user is already authorized to view.
 - The extension does not transmit user data to the developer, does not use ads or tracking, and uses page content only to provide the three listed features to the user.
@@ -136,15 +137,15 @@ Changes in v1.4.8:
 ## 提出前チェック
 
 - `./scripts/package-webstore.sh` でクリーンな ZIP を作成する
-- `unzip -p dist/iniad_plus-chrome-web-store-v1.4.8.zip manifest.json` で `permissions`、`optional_permissions`、`background` が存在しないことを確認する
-- `unzip -l dist/iniad_plus-chrome-web-store-v1.4.8.zip` で掲載機能（PDF helper、課題・出席まとめ、Drive 資料検索）以外の JS/CSS と `js/service-worker.js` が入っていないことを確認する
+- `unzip -p dist/iniad_plus-chrome-web-store-v1.4.9.zip manifest.json` で `permissions`、`optional_permissions`、`background` が存在しないことを確認する
+- `unzip -l dist/iniad_plus-chrome-web-store-v1.4.9.zip` で掲載機能（PDF helper、課題・出席まとめ、Drive 資料検索）以外の JS/CSS と `js/service-worker.js` が入っていないことを確認する
 - スクリーンショットは `store-assets/chrome-web-store-screenshot-640x400.png` を使う
 - 小プロモーション タイルは `store-assets/chrome-web-store-small-promo-440x280.png` を使う
 - マーキー画像は `store-assets/chrome-web-store-marquee-1400x560.png` を使う
 - ストアアイコンは `img/iniadpp128.png` を使う
 - 「データの販売」「広告」「トラッキング」はすべて `いいえ`
-- 収集データは、実際の dashboard 分類に合わせて `ウェブサイトのコンテンツ` または同等項目を開示し、用途を学習用 PDF 作成補助、課題・出席まとめの表示、Drive 資料検索ボタンの作成に限定する
+- 収集データは、実際の dashboard 分類に合わせて `ウェブサイトのコンテンツ` または同等項目を開示し（回答の保存状況の読み取りも含める）、用途を学習用 PDF 作成補助、課題・出席まとめの表示、Drive 資料検索ボタンの作成に限定する
 
-## 今回の更新内容（v1.4.8）
+## 今回の更新内容（v1.4.9）
 
-`課題・出席まとめの判定を安定化し、ページの描画が確定する前に「未提出」「提出済み」「出席」の色が一時表示される問題を修正しました。Chrome Web Store 向け ZIP は引き続き権限なし・background なしで、「印刷用 PDF 作成補助」「課題・出席まとめ」「Drive 資料検索」の 3 機能だけを含みます。`
+`課題・出席まとめで、提出済みの課題が「未提出」と表示されたり、色が付かなかったりする問題を修正しました。提出状況は moocs.iniad.org の回答の受付状況と保存済みの回答から判定し、回答の内容は保存も送信もしません。受付が終わった出席ページには色を付けません。Chrome Web Store 向け ZIP は引き続き権限なし・background なしで、「印刷用 PDF 作成補助」「課題・出席まとめ」「Drive 資料検索」の 3 機能だけを含みます。`
